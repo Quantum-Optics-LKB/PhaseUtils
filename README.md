@@ -34,6 +34,19 @@ Most of the functions can run on the CPU or the GPU: the GPU variant of each fun
 
 The detailed tutorial of the process is explained in the [`demo_contrast`](demo_contrast.ipynb) Jupyter notebook.
 
+## `monitor_phase.py`
+
+A set of live viewers for lab use:
+- `monitor_fourier_fringes` will display a live window with the two Fourier quadrans to align the interferometer.
+- `monitor_phase` will display a live window with the phase and intensity of the field.
+- `monitor_fourier_space` will display a live window with the Fourier space of the field.
+The last function is especially useful since transforming the field instead of imaging directly the Fourier space after a lens allows to get a much better dynamic range.
+
+## `SLM.py`
+
+A small utility to display a borderless window to control SLM and DMD's in display mode. 
+The `phase_intensity` function allows to display a modulated grating allowing to control phase and intensity of a beam according to the technique presented in [this paper](https://opg.optica.org/abstract.cfm?URI=ao-42-11-2003).
+
 ## `velocity.py`
 
 A set of utilities to study 2D turbulence in fluids of light. The main code is `velocity.py` which contains all utilities to analyze the phase of the fluid in order to retrieve the velocity fields, detect vortices and cluster them in order to extract useful statistical properties. The code can be easily adapted to a wider variety of physical situations since it only relies on the information given by a 2D velocity field.
@@ -83,5 +96,6 @@ An overview is presented within the `main` function (that runs if you call `pyth
 These speeds (especially on the GPU) allow for practical **real time tracking of vortices**. Furthermore the clustering algorithm shows a nice $O(N~log(N))$ tested complexity.
 
 ## Other references
+[Modulated gratings](https://opg.optica.org/abstract.cfm?URI=ao-42-11-2003)
 [Transit preprint](https://arxiv.org/abs/2202.05764)
 [VortexDistributions.jl](https://github.com/AshtonSBradley/VortexDistributions.jl) A Julia based implementation of the authors of the excellent paper about clustering. Lacks the clustering routines on the main branch. 
