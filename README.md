@@ -32,6 +32,8 @@ It leverages the computation capabilities of GPU's to achieve ms speed for phase
 It also includes fucntions (`delta_n`) to recover the non-linear index of some medium by measuring phase front deformation through Kerr effect.
 Most of the functions can run on the CPU or the GPU: the GPU variant of each function is indicated by its `_cp` postfix.
 
+The detailed tutorial of the process is explained in the [`demo_contrast.ipynb`](demo_contrast) Jupyter notebook.
+
 ## `velocity.py`
 
 A set of utilities to study 2D turbulence in fluids of light. The main code is `velocity.py` which contains all utilities to analyze the phase of the fluid in order to retrieve the velocity fields, detect vortices and cluster them in order to extract useful statistical properties. The code can be easily adapted to a wider variety of physical situations since it only relies on the information given by a 2D velocity field.
