@@ -10,11 +10,9 @@
 - `numbalsoda`
 - `pyfftw`
 - `pickle`
-- `numpy`
 - `scipy`
 - `matplotlib`
 - `networkx`
-- `numba`
 
 ### GPU computing
 
