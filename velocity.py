@@ -366,9 +366,9 @@ def helmholtz_decomp_cp(field: np.ndarray, plot: bool = False, dx: float = 1,
     ky = 2*np.pi*cp.fft.fftfreq(sy, d=dx)
     K = cp.array(cp.meshgrid(kx, ky))
     if regularize:
-        velo = cp.abs(field)*velocity_fft_cp(cp.angle(field))
+        velo = cp.abs(field)*velocity_cp(cp.angle(field))
     else:
-        velo = velocity_fft_cp(cp.angle(field))
+        velo = velocity_cp(cp.angle(field))
     v_tot = cp.hypot(velo[0], velo[1])
     V_k = cp.fft.fft2(velo)
     # Helmohltz decomposition fot the compressible part
