@@ -690,12 +690,10 @@ def grow_clusters(vortices: np.ndarray, plus: np.ndarray, minus: np.ndarray,
     dists_minus_opp, minus_opp = tree_plus.query(
         vortices[minus, 0:2], k=1, workers=-1)
     # dist to closest opposite both greater than dist between q and neighbor
-    t0 = time.perf_counter()
     plus_to_add_q, plus_to_add_nei = edges_to_connect(
         neighbors_plus, dists_plus_opp, dists_plus)
     minus_to_add_q, minus_to_add_nei = edges_to_connect(
         neighbors_minus, dists_minus_opp, dists_minus)
-    t0 = time.perf_counter()
     cluster_graph.add_edges_from(
         zip(plus[plus_to_add_q], plus[neighbors_plus[plus_to_add_q, plus_to_add_nei]]))
     cluster_graph.add_edges_from(
