@@ -5,12 +5,11 @@ Created by Tangui Aladjidi at 19/03/2021
 
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 import screeninfo
 
 
 class SLMscreen:
-    def __init__(self, resX: int, resY: int, name: str = "SLM"):
+    def __init__(self, position: int, name: str = "SLM"):
         """Initializes the SLM screen
 
         Args:
@@ -21,15 +20,17 @@ class SLMscreen:
         self.name = name
         cv2.namedWindow(name, cv2.WND_PROP_FULLSCREEN)
         shift = None
-        for m in screeinfo.get_monitors():
-            if m.width == resX and m.height == resY:
+        for m in screeninfo.get_monitors():
+            if str(position) in m.name:
                 shift = m.x
+                self.resX = m.width
+                self.resY = m.height
         if shift is None:
             print("ERROR : Could not find SLM !")
         cv2.moveWindow(name, shift, 0)
         cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN,
                               cv2.WINDOW_FULLSCREEN)
-        self.update(np.ones((resY, resX), dtype=np.uint8))
+        self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
 
     def update(self, A: np.ndarray, delay: int = 1):
         """Updates the pattern on the SLM
@@ -319,17 +320,15 @@ def codify_two_values(m: int, n: int, f1: float, f2: float,
 def main():
     import sys
     import time
-    from PIL import Image
-    resX, resY = 1920, 1080
-    slm = SLMscreen(resX, resY)
+    slm = SLMscreen(0)
     T = np.zeros(20)
     for i in range(20):
         sys.stdout.flush()
-        one = np.ones((resY, resX), dtype=np.uint8)
-        slm_pic = (i % 2)*one[:, 0:resX//2] + \
-            ((i+1) % 2)*255*one[:, resX//2:]
+        one = np.ones((slm.resY, slm.resX), dtype=np.uint8)
+        slm_pic = (i % 2)*one[:, 0:slm.resX//2] + \
+            ((i+1) % 2)*255*one[:, slm.resX//2:]
         slm_pic = np.random.choice(
-            [0, 255], size=(resY, resX)).astype(np.uint8)
+            [0, 255], size=(slm.resY, slm.resX)).astype(np.uint8)
         t0 = time.time()
         slm.update(slm_pic, delay=1)
         t = time.time()-t0
