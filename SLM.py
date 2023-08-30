@@ -6,6 +6,7 @@ Created by Tangui Aladjidi at 19/03/2021
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+import screeninfo
 
 
 class SLMscreen:
@@ -19,7 +20,13 @@ class SLMscreen:
         """
         self.name = name
         cv2.namedWindow(name, cv2.WND_PROP_FULLSCREEN)
-        cv2.moveWindow(name, resX, 0)
+        shift = None
+        for m in screeinfo.get_monitors():
+            if m.width == resX and m.height == resY:
+                shift = m.x
+        if shift is None:
+            print("ERROR : Could not find SLM !")
+        cv2.moveWindow(name, shift, 0)
         cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN,
                               cv2.WINDOW_FULLSCREEN)
         self.update(np.ones((resY, resX), dtype=np.uint8))
