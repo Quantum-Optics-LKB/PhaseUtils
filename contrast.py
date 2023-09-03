@@ -19,6 +19,7 @@ import numba
 from numba import cuda
 import cmath
 import math
+from typing import Any
 import multiprocessing
 pyfftw.interfaces.cache.enable()
 pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()//2
