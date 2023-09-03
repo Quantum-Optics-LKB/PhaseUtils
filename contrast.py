@@ -1092,31 +1092,34 @@ def im_osc_fast(im: cp.ndarray, radius: int = 0, cont: bool = False) -> cp.ndarr
     return im_ifft
 
 
-def im_osc_fast_t(im: np.ndarray, radius: int = None, cont: bool = False, quadran: str = 'upper') -> np.ndarray:
+def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
+                  plans: Any = None) -> np.ndarray:
     """Fast field recovery assuming ideal reference angle i.e minimum fringe size of sqrt(2) pixels
     Truncated for optimal speed
     Args:
         im (cp.ndarray): Interferogram
-        radius (int, optional): Radius of filter in px. Defaults to None.
+        radius (int, optional): Radius of filter in px. Defaults to 512.
         cont (bool, optionnal): Returns the continuous part of the field. Defaults to False.
-        quadran (str, optional): Fourier quadran selected. "upper" or "lower". Defaults to "upper" 
-        corresponding to fringes oriented at 45° (resp -45°).
-        ATTENTION : this function uses a REAL FFT i.e output shape (N, N//2+1)
+        plans (FFTW plan list, optionnal): [plan_fft, plan_ifft] for optional plan caching
+        in streaming applications (like for a viewer). Must provide a list of plans for 
+        both the rfft and ifft.
 
     Returns:
         np.ndarray: Recovered field
     """
-    if radius is None:
-        radius = max(im.shape)//4
+    if plans is not None:
+        plan_fft, plan_ifft = plans
+    if radius == 0:
+        radius = min(im.shape)//4
+    center = (im.shape[0]//4, im.shape[1]//4)
     assert len(im.shape) == 2, "Can only work with 2D images !"
     # center of first quadran
-    if quadran == 'upper':
-        center = (im.shape[0]//4, im.shape[1]//4)
-    elif quadran == 'lower':
-        center = (im.shape[0]//4+im.shape[0]//2, im.shape[1]//4)
     im_ifft = pyfftw.empty_aligned(
         (im.shape[0]//2, im.shape[1]//2), dtype=np.complex64)
-    im_fft = pyfftw.interfaces.numpy_fft.rfft2(im)
+    if plans is None:
+        im_fft = pyfftw.interfaces.numpy_fft.rfft2(im)
+    else:
+        im_fft = plan_fft(im)
     Y, X = np.ogrid[:im_fft.shape[0], :im_fft.shape[1]]
     dist_from_center = np.hypot(X - center[1], Y-center[0])
     mask = dist_from_center > radius
@@ -1126,27 +1129,28 @@ def im_osc_fast_t(im: np.ndarray, radius: int = None, cont: bool = False, quadra
             (im.shape[0]//2, im.shape[1]//2), dtype=np.complex64)
         mask_cont = cache(cont_size, out=False, center=(0, 0),
                           nb_pix=im_ifft_cont.shape)
-        mask_cont = np.logical_xor(mask_cont, cache(cont_size, out=False, center=(0, im_ifft_cont.shape[0]),
+        mask_cont = np.logical_xor(mask_cont, cache(cont_size, out=False,
+                                                    center=(
+                                                        0, im_ifft_cont.shape[0]),
                                                     nb_pix=im_ifft_cont.shape))
         im_ifft_cont[0:im_ifft_cont.shape[0]//2,
                      :] = im_fft[0:im_ifft_cont.shape[0]//2, 0:im_ifft_cont.shape[1]]
         im_ifft_cont[im_ifft_cont.shape[0]//2:,
-                     :] = im_fft[im_fft.shape[0]-im_ifft_cont.shape[0]//2:im_fft.shape[0], 0:im_ifft_cont.shape[1]]
+                     :] = im_fft[im_fft.shape[0]-im_ifft_cont.shape[0]//2:im_fft.shape[0],
+                                 0:im_ifft_cont.shape[1]]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.ifft2(im_ifft_cont)
     im_fft[mask] = 0
-    if quadran == 'upper':
-        im_ifft[:, :] = im_fft[:im_fft.shape[0]//2, :im_fft.shape[1]-1]
-    elif quadran=='lower':
-        im_ifft[:, :] = im_fft[im_fft.shape[0]//2:, :im_fft.shape[1]-1]
+    im_ifft[:, :] = im_fft[:im_fft.shape[0]//2, :im_fft.shape[1]-1]
     im_ifft = np.fft.fftshift(im_ifft)
-    im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
-    im_ifft *= np.exp(-1j *
-                      np.angle(im_ifft[im_ifft.shape[0]//2, im_ifft.shape[1]//2]))
+    if plans is None:
+        im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
+    else:
+        im_fft = plan_ifft(im_ifft)
+    exp_angle_fast_scalar(im_ifft, np.angle(im_ifft[0, 0]))
     if cont:
         return im_cont, im_ifft
     return im_ifft
-
 
 def im_osc_fast_t_cp(im: cp.ndarray, radius: int = None, cont: bool = False, quadran: str = 'upper') -> cp.ndarray:
     """Fast field recovery assuming ideal reference angle i.e minimum fringe size of sqrt(2) pixels
