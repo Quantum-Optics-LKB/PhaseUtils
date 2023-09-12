@@ -1096,7 +1096,8 @@ def im_osc_fast(im: cp.ndarray, radius: int = 0, cont: bool = False) -> cp.ndarr
 def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
                   plans: Any = None) -> np.ndarray:
     """Fast field recovery assuming ideal reference angle i.e minimum fringe size of sqrt(2) pixels
-    Truncated for optimal speed
+    Truncated for optimal speed: returns an array with size (Ny//2, Nx//2) since the recovery
+    process has a resolution of 2px.
     Args:
         im (cp.ndarray): Interferogram
         radius (int, optional): Radius of filter in px. Defaults to 512.
