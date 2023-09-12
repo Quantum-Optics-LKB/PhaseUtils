@@ -154,7 +154,37 @@ def angle_fast_cp(x: cp.ndarray, out: cp.ndarray):
         if j < x.shape[1]:
             out[i, j] = cmath.phase(x[i, j])
 
+@numba.njit((numba.complex64[:, :], numba.complex64[:, :]), fastmath=True,
+            nogil=True, cache=True, parallel=True)
+def exp_angle_fast(x: np.ndarray, y: np.ndarray):
+    """Fast multiplication by exp(1j*x)
 
+    Args:
+        x (np.ndarray): The complex field
+        y (np.ndarray): the field to multiply
+    Returns:
+        None
+    """
+    for i in numba.prange(x.shape[0]):
+        for j in range(x.shape[1]):
+            x[i, j] *= cmath.exp(1j*cmath.phase(y[i, j]))
+
+
+@numba.njit((numba.complex64[:, :], numba.complex64), fastmath=True,
+            nogil=True, cache=True, parallel=True)
+def exp_angle_fast_scalar(x: np.ndarray, y: complex):
+    """Fast multiplication by exp(1j*y)
+
+    Args:
+        x (np.ndarray): The input array
+        y (complex): the scalar to multiply
+    Returns:
+        None
+    """
+    for i in numba.prange(x.shape[0]):
+        for j in range(x.shape[1]):
+            x[i, j] *= cmath.exp(1j*cmath.phase(y))
+            
 def centre(im, truncate: bool = True):
     """Fits the center of the image using gaussian fitting
 
