@@ -292,6 +292,7 @@ def black_hole_phase_profile(m: int, n: int, x_center: float, y_center: float,
     return np.angle(phase_temp)
 
 
+@numba.njit(fastmath=True, cache=True)
 def bragg_density_profile(m: int, n: int, kp: float, alpha: float = 0.1,
                           SLM_pitch: float = 8.0e-6, width: int = 250):
     """Generates a density modulation in cos(kp*xx)
@@ -313,7 +314,7 @@ def bragg_density_profile(m: int, n: int, kp: float, alpha: float = 0.1,
     xx *= SLM_pitch
     yy *= SLM_pitch
     inten = np.ones((m, n))
-    inten -= alpha(1+np.cos(kp*xx))/2
+    inten -= alpha*(1+np.cos(kp*xx))/2
     inten /= np.max(inten)
     inten[0:m//2-width//2, :] = 0
     inten[m//2+width//2:, :] = 0
