@@ -8,13 +8,13 @@ import numpy as np
 import numba
 import math
 from scipy.interpolate import make_interp_spline
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x)/x
 # carry out the interpolation
 interpolator = make_interp_spline(y, x, k=3)
-# for plotting
+# # for plotting
 # inv_interp = interpolator(y)
 # fig, ax = plt.subplots(1, 2)
 # ax[0].set_title(r"$\mathrm{sinc}(x)=\frac{\mathrm{sin}(x)}{x}$ function")
@@ -75,48 +75,7 @@ class SLMscreen:
     def close(self):
         cv2.destroyWindow(self.name)
 
-
-@numba.njit(fastmath=True, cache=True, parallel=True)
 def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
-                    theta: int = 45, pitch: int = 8, cal_value: int = 255) -> np.ndarray:
-    """Function to generate SLM pattern with given intensity and phase
-    Based on Davis et al. Encoding amplitude information onto phase-only filters
-    https://opg.optica.org/ao/fulltext.cfm?uri=ao-38-23-5004&id=60239 
-
-    Args:
-        intensity (np.ndarray): Intensity mask
-        phase (np.ndarray): Phase mask
-        theta (int, optional): Angle of the grating in degrees. Defaults to 45.
-        pitch (int, optional): Pixel pitch of the grating in px
-        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing on the SLM.
-
-    Returns:
-        np.ndarray: The phase mask to display on the SLM
-    """
-    # check that shapes match
-    assert amp.shape == phase.shape, "Shape mismatch between phase and intensity !"
-    m, n = amp.shape
-    # normalize input
-    amp = amp/np.nanmax(amp)
-    # this corrects the aberrations described in Section 6. eq. 26
-    # assumes we look at the first order
-    # amp /= np.sinc(1-amp)
-    # normalize again since we divided by values smaller than 1
-    # amp /= np.nanmax(amp)
-    # generate grating with given angle
-    grat = grating(m, n, theta, pitch)
-    grat *= 2*np.pi
-    # generate modulation field according to eq.9
-    phase_map = np.zeros((m, n), dtype=np.float32)
-    for i in numba.prange(m):
-        for j in numba.prange(n):
-            phi = (grat[i, j] + phase[i, j]) % (2*np.pi)
-            phase_map[i, j] = amp[i, j] * phi
-            phase_map[i, j] = phase_map[i, j] / (2.0*np.pi) * cal_value
-    return phase_map.astype(np.uint8)
-
-
-def phase_amplitude_v2(amp: np.ndarray, phase: np.ndarray,
                        theta: int = 45, pitch: int = 8, cal_value: int = 256) -> np.ndarray:
     """Function to generate SLM pattern with given intensity and phase
     Based on Bolduc et al. Exact solution to simultaneous intensity and 
@@ -152,49 +111,6 @@ def phase_amplitude_v2(amp: np.ndarray, phase: np.ndarray,
     return phase_map.astype(np.uint8)
 
 
-def phase_only(intensity: np.ndarray, phase: np.ndarray,
-               theta: int = 45, pitch: int = 8, cal_value: int = 255) -> np.ndarray:
-    """Function to generate SLM pattern with only phase
-
-    Args:
-        intensity (np.ndarray): Intensity mask.
-        phase (np.ndarray): Phase mask
-        theta (int, optional): Angle of the grating in degrees. Defaults to 45.
-        pitch (int, optional): Pixel pitch of the grating in px
-        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing on the SLM.
-
-    Returns:
-        np.ndarray: The phase mask to display on the SLM
-    """
-    # check that shapes match
-    assert intensity.shape == phase.shape, "Shape mismatch between phase and intensity !"
-    m, n = intensity.shape
-    # normalize input
-    intensity = intensity/np.nanmax(intensity)
-    # this corrects the aberrations described in Section 6. eq. 26
-    # # assumes we look at the first order
-    # intensity /= np.sinc(1-intensity)
-    # # normalize again since we divided by values smaller than 1
-    # intensity /= np.nanmax(intensity)
-    # generate grating with given angle
-    grat = grating(m, n, theta, pitch)
-    grat *= 2*np.pi
-    # generate modulation field according to eq.9
-    field = np.exp(1j*grat + 1j*phase)
-    ##### GENERATING PHASE MAP #####
-    # phase_map = intensity*(np.angle(field) + np.pi)
-    # phase_map = phase_map / (2*np.pi) * cal_value
-    # phase_map = phase_map // 1
-    # import matplotlib.pyplot as plt
-    # plt.figure()
-    # plt.imshow(np.angle(field))
-    # plt.colorbar()
-    # plt.show()
-    phase_map = (np.angle(field) + 2.0*np.pi)
-    phase_map = phase_map % (2.0*np.pi) / (2.0*np.pi) * cal_value
-    phase_map = phase_map // 1
-
-    return phase_map.astype(np.uint8)
 
 
 @numba.njit(cache=True, parallel=True)
@@ -398,7 +314,7 @@ def bragg_density_profile(m: int, n: int, kp: float, alpha: float = 0.1,
     xx *= SLM_pitch
     yy *= SLM_pitch
     inten = np.ones((m, n))
-    inten += alpha*np.cos(kp*xx)
+    inten -= alpha(1+np.cos(kp*xx))/2
     inten /= np.max(inten)
     inten[0:m//2-width//2, :] = 0
     inten[m//2+width//2:, :] = 0
