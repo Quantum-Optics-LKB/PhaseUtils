@@ -8,8 +8,7 @@ import numpy as np
 import numba
 import math
 from scipy.interpolate import make_interp_spline
-import matplotlib.pyplot as plt
-
+import screeninfo
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x)/x
 # carry out the interpolation
@@ -46,7 +45,7 @@ def inv_sinc(y: np.ndarray) -> np.ndarray:
 
 
 class SLMscreen:
-    def __init__(self, resX: int, resY: int, name: str = "SLM"):
+     def __init__(self, position: int, name: str = "SLM"):
         """Initializes the SLM screen
 
         Args:
@@ -56,10 +55,18 @@ class SLMscreen:
         """
         self.name = name
         cv2.namedWindow(name, cv2.WND_PROP_FULLSCREEN)
-        cv2.moveWindow(name, 2*resX, 0)
+        shift = None
+        for m in screeninfo.get_monitors():
+            if str(position) in m.name:
+                shift = m.x
+                self.resX = m.width
+                self.resY = m.height
+        if shift is None:
+            print("ERROR : Could not find SLM !")
+        cv2.moveWindow(name, shift, 0)
         cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN,
                               cv2.WINDOW_FULLSCREEN)
-        self.update(np.ones((resY, resX), dtype=np.uint8))
+        self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
 
     def update(self, A: np.ndarray, delay: int = 1):
         """Updates the pattern on the SLM
