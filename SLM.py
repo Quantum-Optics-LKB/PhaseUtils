@@ -7,15 +7,24 @@ import cv2
 import numpy as np
 import numba
 import math
+from fast_interp import interp1d
 from scipy.interpolate import make_interp_spline
-import screeninfo
+
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x)/x
+y[-1] = 1
 # carry out the interpolation
-interpolator = make_interp_spline(y, x, k=3)
+interpolator = make_interp_spline(y, x, k=1)
+N_interp = 100
+f = interpolator(np.linspace(0, 1, N_interp))
+f[-1] = 0
+inv_sinc = interp1d(0, 1, 1/N_interp, f, e=3, k=1)
 # # for plotting
-# inv_interp = interpolator(y)
+# import matplotlib.pyplot as plt
+# y1 = np.linspace(0, 1-1e-3, 500)
+# inv_interp = interpolator(y1)
 # fig, ax = plt.subplots(1, 2)
+# # ax1 = ax[1].twinx()
 # ax[0].set_title(r"$\mathrm{sinc}(x)=\frac{\mathrm{sin}(x)}{x}$ function")
 # ax[0].set_xlabel(r"$x$")
 # ax[0].set_ylabel(r"$y=\mathrm{sinc}(x)$")
@@ -24,28 +33,17 @@ interpolator = make_interp_spline(y, x, k=3)
 # ax[1].set_xlabel(r"$y$")
 # ax[1].set_ylabel(r"$x=\mathrm{sinc}^{-1}(y)$")
 # ax[1].plot(y, x)
-# ax[1].plot(y, inv_interp, label='Numerical solution', ls='--')
+# ax[1].plot(y1, inv_interp, label='Interpolation', ls='--', marker='o')
 # ax[1].legend()
+# # ax1.plot(y, np.abs(inv_interp-x))
+# # ax1.plot(y, np.abs(inv_fit-x))
+# # ax1.set_ylabel("Error")
+# # ax1.set_yscale('log')
 # plt.show()
 
 
-def inv_sinc(y: np.ndarray) -> np.ndarray:
-    """Returns the inverse sinc function for 
-    sinc(x)=sin(x)/x defined from the [-pi, 0] interval
-    to the [0, 1] interval.
-    The inverse function is thus defined from [0, 1] to [-pi, 0]
-    Uses a cached interpolator for speed.
-    Args:
-    y (np.ndarray): Input array
-
-    Returns:
-    np.ndarray: Output array
-    """
-    return interpolator(y)
-
-
 class SLMscreen:
-     def __init__(self, position: int, name: str = "SLM"):
+    def __init__(self, resX: int, resY: int, name: str = "SLM"):
         """Initializes the SLM screen
 
         Args:
@@ -55,18 +53,10 @@ class SLMscreen:
         """
         self.name = name
         cv2.namedWindow(name, cv2.WND_PROP_FULLSCREEN)
-        shift = None
-        for m in screeninfo.get_monitors():
-            if str(position) in m.name:
-                shift = m.x
-                self.resX = m.width
-                self.resY = m.height
-        if shift is None:
-            print("ERROR : Could not find SLM !")
-        cv2.moveWindow(name, shift, 0)
+        cv2.moveWindow(name, 2*resX, 0)
         cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN,
                               cv2.WINDOW_FULLSCREEN)
-        self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
+        self.update(np.ones((resY, resX), dtype=np.uint8))
 
     def update(self, A: np.ndarray, delay: int = 1):
         """Updates the pattern on the SLM
@@ -82,8 +72,9 @@ class SLMscreen:
     def close(self):
         cv2.destroyWindow(self.name)
 
+
 def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
-                       theta: int = 45, pitch: int = 8, cal_value: int = 256) -> np.ndarray:
+                    theta: int = 45, pitch: int = 8, cal_value: int = 256) -> np.ndarray:
     """Function to generate SLM pattern with given intensity and phase
     Based on Bolduc et al. Exact solution to simultaneous intensity and 
     phase encryption with a single phase-only hologram
@@ -102,22 +93,68 @@ def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
     # check that shapes match
     assert amp.shape == phase.shape, "Shape mismatch between phase and intensity !"
     m, n = amp.shape
-    # normalize input
-    amp = amp/np.nanmax(amp)
+    # normalize input to less than 1 for the inv_sinc function
+    amp /= (np.nanmax(amp)+1e-3)
     # eq 4
-    amp = 1 + 1/np.pi*inv_sinc(amp)
-    phase = phase - np.pi*amp
+    inv_sinc(amp, amp)
+    amp /= np.pi
+    amp += 1
+    phase -= np.pi*amp
     # generate grating with given angle
     grat = grating(m, n, theta, pitch)
     grat *= 2*np.pi
     # generate modulation field according to eq.9
-    phase_map = np.zeros((m, n), dtype=np.float32)
-    phi = (grat + phase) % (2*np.pi)
-    phase_map = amp * phi
-    phase_map = phase_map / (2.0*np.pi) * cal_value
+    phase += grat
+    phase %= (2*np.pi)
+    phase *= amp
+    phase /= (2.0*np.pi)
+    phase *= cal_value
+    return phase.astype(np.uint8)
+
+
+def phase_only(intensity: np.ndarray, phase: np.ndarray,
+               theta: int = 45, pitch: int = 8, cal_value: int = 255) -> np.ndarray:
+    """Function to generate SLM pattern with only phase
+
+    Args:
+        intensity (np.ndarray): Intensity mask.
+        phase (np.ndarray): Phase mask
+        theta (int, optional): Angle of the grating in degrees. Defaults to 45.
+        pitch (int, optional): Pixel pitch of the grating in px
+        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing on the SLM.
+
+    Returns:
+        np.ndarray: The phase mask to display on the SLM
+    """
+    # check that shapes match
+    assert intensity.shape == phase.shape, "Shape mismatch between phase and intensity !"
+    m, n = intensity.shape
+    # normalize input
+    intensity = intensity/np.nanmax(intensity)
+    # this corrects the aberrations described in Section 6. eq. 26
+    # # assumes we look at the first order
+    # intensity /= np.sinc(1-intensity)
+    # # normalize again since we divided by values smaller than 1
+    # intensity /= np.nanmax(intensity)
+    # generate grating with given angle
+    grat = grating(m, n, theta, pitch)
+    grat *= 2*np.pi
+    # generate modulation field according to eq.9
+    field = np.exp(1j*grat + 1j*phase)
+    ##### GENERATING PHASE MAP #####
+    # phase_map = intensity*(np.angle(field) + np.pi)
+    # phase_map = phase_map / (2*np.pi) * cal_value
+    # phase_map = phase_map // 1
+    # import matplotlib.pyplot as plt
+    # plt.figure()
+    # plt.imshow(np.angle(field))
+    # plt.colorbar()
+    # plt.show()
+    phase_map = (np.angle(field) + 2.0*np.pi)
+    phase_map = phase_map % (2.0*np.pi) / (2.0*np.pi) * cal_value
+    phase_map = phase_map // 1
+
     return phase_map.astype(np.uint8)
-
-
 
 
 @numba.njit(cache=True, parallel=True)
@@ -153,12 +190,13 @@ def grating(m: int, n: int, theta: float = 45, pitch: int = 8) -> np.ndarray:
         np.ndarray: Array representing the grating
     """
     grating = np.zeros((m, n), dtype=np.float32)
+    c = math.cos(np.pi/180*theta)
+    s = math.sin(np.pi/180*theta)
     for i in numba.prange(m):
         for j in numba.prange(n):
-            grating[i, j] = math.cos(np.pi/180*theta)*i + \
-                math.sin(np.pi/180*theta)*j
+            grating[i, j] = c*i + s*j
             grating[i, j] %= pitch
-    grating /= pitch
+            grating[i, j] /= pitch
     return grating
 
 
@@ -321,7 +359,7 @@ def bragg_density_profile(m: int, n: int, kp: float, alpha: float = 0.1,
     xx *= SLM_pitch
     yy *= SLM_pitch
     inten = np.ones((m, n))
-    inten -= alpha*(1+np.cos(2*np.pi*kp*xx))/2
+    inten -= alpha(1+np.cos(kp*xx))/2
     inten /= np.max(inten)
     inten[0:m//2-width//2, :] = 0
     inten[m//2+width//2:, :] = 0
@@ -389,17 +427,18 @@ def main():
 
     # print(f"\nAverage display time = {np.mean(T)} ({np.std(T)}) s")
 
-    N = 50
+    N = 200
     T = np.zeros(N)
     for i in range(N):
-        x = np.random.random((resY, resX)).astype(np.uint8)
-        y = np.random.random((resY, resX)).astype(np.uint8)
+        x = np.random.random((resY, resX)).astype(np.float32)
+        y = np.random.random((resY, resX)).astype(np.float32)
         t0 = time.perf_counter()
         pat = phase_amplitude(x, y)
         # mgrid(resY, resX)
         # grating(resY, resX)
         T[i] = time.perf_counter()-t0
-    print(f"\nAverage time = {np.mean(T)} ({np.std(T)}) s")
+    print(
+        f"\nAverage time = {np.median(T)*1e3} +/- {np.std(T)*1e3} ms / min = {np.min(T)*1e3} ms / max = {np.max(T)*1e3} ms")
 
 
 if __name__ == "__main__":
