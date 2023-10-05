@@ -107,8 +107,7 @@ def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
     phase += grat
     phase %= (2*np.pi)
     phase *= amp
-    phase /= (2.0*np.pi)
-    phase *= cal_value
+    phase *= cal_value/(2*np.pi)
     return phase.astype(np.uint8)
 
 
