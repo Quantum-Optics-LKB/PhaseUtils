@@ -96,7 +96,7 @@ def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
     # normalize input to less than 1 for the inv_sinc function
     amp /= (np.nanmax(amp)+1e-3)
     # eq 4
-    inv_sinc(amp, amp)
+    amp = inv_sinc(amp)
     amp /= np.pi
     amp += 1
     phase -= np.pi*amp
