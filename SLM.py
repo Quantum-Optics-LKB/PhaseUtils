@@ -9,18 +9,19 @@ import numba
 import math
 from fast_interp import interp1d
 from scipy.interpolate import make_interp_spline
+import matplotlib.pyplot as plt
+import screeninfo
 
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x)/x
 y[-1] = 1
 # carry out the interpolation
 interpolator = make_interp_spline(y, x, k=1)
-N_interp = 100
+N_interp = 2000
 f = interpolator(np.linspace(0, 1, N_interp))
 f[-1] = 0
 inv_sinc = interp1d(0, 1, 1/N_interp, f, e=3, k=1)
 # # for plotting
-# import matplotlib.pyplot as plt
 # y1 = np.linspace(0, 1-1e-3, 500)
 # inv_interp = interpolator(y1)
 # fig, ax = plt.subplots(1, 2)
@@ -42,21 +43,29 @@ inv_sinc = interp1d(0, 1, 1/N_interp, f, e=3, k=1)
 # plt.show()
 
 
+
 class SLMscreen:
-    def __init__(self, resX: int, resY: int, name: str = "SLM"):
+    def __init__(self, position: int, name: str = "SLM"):
         """Initializes the SLM screen
 
         Args:
-            resX (int): Resolution along x axis
-            resY (int): Resolution along y axis
+            position (int): Position of the SLM screen
             name (str, optional): Name of the SLM window. Defaults to "SLM".
         """
         self.name = name
         cv2.namedWindow(name, cv2.WND_PROP_FULLSCREEN)
-        cv2.moveWindow(name, 2*resX, 0)
+        shift = None
+        for m in screeninfo.get_monitors():
+            if str(position) in m.name:
+                shift = m.x
+                self.resX = m.width
+                self.resY = m.height
+        if shift is None:
+            print("ERROR : Could not find SLM !")
+        cv2.moveWindow(name, shift, 0)
         cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN,
                               cv2.WINDOW_FULLSCREEN)
-        self.update(np.ones((resY, resX), dtype=np.uint8))
+        self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
 
     def update(self, A: np.ndarray, delay: int = 1):
         """Updates the pattern on the SLM
@@ -72,9 +81,24 @@ class SLMscreen:
     def close(self):
         cv2.destroyWindow(self.name)
 
+@numba.njit(fastmath=True, cache=True, parallel=True,
+            boundscheck=False)
+def _phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray) -> None:
+    for i in numba.prange(amp.shape[0]):
+        for j in numba.prange(amp.shape[1]):
+            grat[i, j] *= 2*np.pi
+            amp[i, j] /= np.pi
+            amp[i, j] += 1
+            phase[i, j] -= np.pi*amp[i, j]
+            # generate modulation field according to eq.9
+            phase[i, j] += grat[i, j]
+            phase[i, j] %= (2*np.pi)
+            phase[i, j] *= amp[i, j]
+            phase[i, j] /= (2.0*np.pi)
 
-def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
-                    theta: int = 45, pitch: int = 8, cal_value: int = 256) -> np.ndarray:
+def phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray = None,
+                    theta: int = 45, pitch: int = 8, 
+                    cal_value: int = 256) -> np.ndarray:
     """Function to generate SLM pattern with given intensity and phase
     Based on Bolduc et al. Exact solution to simultaneous intensity and 
     phase encryption with a single phase-only hologram
@@ -95,19 +119,13 @@ def phase_amplitude(amp: np.ndarray, phase: np.ndarray,
     m, n = amp.shape
     # normalize input to less than 1 for the inv_sinc function
     amp /= (np.nanmax(amp)+1e-3)
+    # generate grating with given angle
+    if grat is None:
+        grat = grating(m, n, theta, pitch)
     # eq 4
     amp = inv_sinc(amp)
-    amp /= np.pi
-    amp += 1
-    phase -= np.pi*amp
-    # generate grating with given angle
-    grat = grating(m, n, theta, pitch)
-    grat *= 2*np.pi
-    # generate modulation field according to eq.9
-    phase += grat
-    phase %= (2*np.pi)
-    phase *= amp
-    phase *= cal_value/(2*np.pi)
+    _phase_amplitude(amp, grat, phase)
+    phase *= cal_value
     return phase.astype(np.uint8)
 
 
@@ -156,7 +174,7 @@ def phase_only(intensity: np.ndarray, phase: np.ndarray,
     return phase_map.astype(np.uint8)
 
 
-@numba.njit(cache=True, parallel=True)
+@numba.njit(cache=True, parallel=True, boundscheck=False)
 def mgrid(m: int, n: int):
     """Numba compatible mgrid in i,j indexing style
 
@@ -175,7 +193,8 @@ def mgrid(m: int, n: int):
     return yy, xx
 
 
-@numba.njit(fastmath=True, cache=True, parallel=True)
+@numba.njit(fastmath=True, cache=True, parallel=True,
+            boundscheck=False)
 def grating(m: int, n: int, theta: float = 45, pitch: int = 8) -> np.ndarray:
     """Generates a grating of size (m, n) 
 
@@ -335,8 +354,8 @@ def black_hole_phase_profile(m: int, n: int, x_center: float, y_center: float,
 
     return np.angle(phase_temp)
 
-
-@numba.njit(fastmath=True, cache=True)
+@numba.njit(fastmath=True, cache=True, parallel=True,
+            boundscheck=False)
 def bragg_density_profile(m: int, n: int, kp: float, alpha: float = 0.1,
                           SLM_pitch: float = 8.0e-6, width: int = 250):
     """Generates a density modulation in cos(kp*xx)
@@ -349,17 +368,10 @@ def bragg_density_profile(m: int, n: int, kp: float, alpha: float = 0.1,
         SLM_pitch (float, optional): SLM pixel pitch in m. Defaults to 8.0e-6
         width (int, optional): Width of the strip pattern on the SLM in pixels
     """
-    # x = np.linspace(-n/2, n/2, n)*SLM_pitch
-    # y = np.linspace(-m/2, m/2, m)*SLM_pitch
-    # xx, yy = np.meshgrid(x, y)
-    yy, xx = mgrid(m, n)
-    xx = xx - n/2
-    yy = yy - m/2
-    xx *= SLM_pitch
-    yy *= SLM_pitch
     inten = np.ones((m, n))
-    inten -= alpha(1+np.cos(kp*xx))/2
-    inten /= np.max(inten)
+    for i in numba.prange(m):
+        for j in numba.prange(n):
+            inten[i, j] -= alpha*(1+np.cos(2*np.pi*kp*j*SLM_pitch))/2
     inten[0:m//2-width//2, :] = 0
     inten[m//2+width//2:, :] = 0
     return inten
@@ -428,13 +440,15 @@ def main():
 
     N = 200
     T = np.zeros(N)
+    grat = grating(resY, resX)
     for i in range(N):
         x = np.random.random((resY, resX)).astype(np.float32)
         y = np.random.random((resY, resX)).astype(np.float32)
         t0 = time.perf_counter()
-        pat = phase_amplitude(x, y)
+        pat = phase_amplitude(x, y, grat)
         # mgrid(resY, resX)
         # grating(resY, resX)
+        # bragg_density_profile(resY, resX, 1e4, alpha=0.1, width=200)
         T[i] = time.perf_counter()-t0
     print(
         f"\nAverage time = {np.median(T)*1e3} +/- {np.std(T)*1e3} ms / min = {np.min(T)*1e3} ms / max = {np.max(T)*1e3} ms")
