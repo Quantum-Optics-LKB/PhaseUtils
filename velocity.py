@@ -136,7 +136,16 @@ def az_avg_cp(image: cp.ndarray, center: tuple) -> cp.ndarray:
 
 @numba.njit(numba.float32[:, :](numba.float32[:, :, :], numba.int64), fastmath=True,
             cache=True, parallel=True)
-def phase_sum(velo: np.ndarray, r: int = 1):
+def phase_sum(velo: np.ndarray, r: int = 1) -> np.ndarray:
+    """Computes the phase gradient winding with a plaquette radius r
+
+    Args:
+        velo (np.ndarray): Velocity array induced from the phase. 
+        velo[0, :, :] is d/dy phi (derivative along rows).
+        r (int): Radius of the plaquette circulation computation
+    Returns:
+        cont (np.ndarray): output array containing the winding computation
+    """
     cont = np.zeros((velo.shape[1], velo.shape[2]), dtype=np.float32)
     for i in numba.prange(velo.shape[1]):
         for j in range(velo.shape[2]):
@@ -154,12 +163,14 @@ def phase_sum(velo: np.ndarray, r: int = 1):
 
 
 @cuda.jit((numba.float32[:, :, :], numba.float32[:, :], numba.int64), fastmath=True)
-def phase_sum_cp(velo, cont, r):
-    """Computes the phase gradient winding
+def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int):
+    """Computes the phase gradient winding in place with a plaquette radius r
 
     Args:
-        grad (cp.ndarray): Phase differences. grad[0, :, :] is d/dy phi (derivative along rows).
+        velo (cp.ndarray): Velocity array induced from the phase. 
+        velo[0, :, :] is d/dy phi (derivative along rows).
         cont (cp.ndarray): output array
+        r (int): Radius of the plaquette circulation computation
     Returns:
         None
     """
