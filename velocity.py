@@ -140,13 +140,16 @@ def phase_sum(velo: np.ndarray, r: int = 1):
     cont = np.zeros((velo.shape[1], velo.shape[2]), dtype=np.float32)
     for i in numba.prange(velo.shape[1]):
         for j in range(velo.shape[2]):
-            for k in range(r+1):
-                cont[i, j] += velo[0, i, (j+k) % velo.shape[2]]
-                cont[i, j] -= velo[0, (i+r) % velo.shape[1],
-                                   (j+k) % velo.shape[2]]
-                cont[i, j] += velo[1, (i+k) % velo.shape[1],
-                                   (j+r) % velo.shape[2]]
-                cont[i, j] -= velo[1, (i+k) % velo.shape[1], j]
+            # center of the plaquette
+            ii = (i+r//2) % velo.shape[-2]
+            jj = (j+r//2) % velo.shape[-1]
+            for k in range(0, r+1):
+                cont[ii, jj] += velo[0, i, (j+k) % velo.shape[-1]]
+                cont[ii, jj] -= velo[0, (i+r) % velo.shape[-2],
+                                     (j+k) % velo.shape[-1]]
+                cont[ii, jj] += velo[1, (i+k) % velo.shape[-2],
+                                     (j+r) % velo.shape[-1]]
+                cont[ii, jj] -= velo[1, (i+k) % velo.shape[-2], j]
     return cont
 
 
@@ -162,13 +165,16 @@ def phase_sum_cp(velo, cont, r):
     """
     i, j = numba.cuda.grid(2)
     if i < velo.shape[1] and j < velo.shape[2]:
-        for k in range(r+1):
-            cont[i, j] += velo[0, i, (j+k) % velo.shape[2]]
-            cont[i, j] -= velo[0, (i+r) % velo.shape[1],
-                               (j+k) % velo.shape[2]]
-            cont[i, j] += velo[1, (i+k) % velo.shape[1],
-                               (j+r) % velo.shape[2]]
-            cont[i, j] -= velo[1, (i+k) % velo.shape[1], j]
+        # center of the plaquette
+        ii = (i+r//2) % velo.shape[-2]
+        jj = (j+r//2) % velo.shape[-1]
+        for k in range(0, r+1):
+            cont[ii, jj] += velo[0, i, (j+k) % velo.shape[-1]]
+            cont[ii, jj] -= velo[0, (i+r) % velo.shape[-2],
+                                 (j+k) % velo.shape[-1]]
+            cont[ii, jj] += velo[1, (i+k) % velo.shape[-2],
+                                 (j+r) % velo.shape[-1]]
+            cont[ii, jj] -= velo[1, (i+k) % velo.shape[-2], j]
 
 
 def velocity(phase: np.ndarray, dx: float = 1) -> np.ndarray:
@@ -529,9 +535,21 @@ def vortex_detection(phase: np.ndarray, plot: bool = False, r: int = 1) -> np.nd
         np.ndarray: A list of the vortices position and charge
     """
     velo = velocity(phase)
-    windings = phase_sum(velo, r)
-    plus_y, plus_x = np.where(windings > 2*np.pi)
-    minus_y, minus_x = np.where(windings < -2*np.pi)
+    if r == 1:
+        windings = phase_sum(velo, r)
+        cond_plus = windings > 2*np.pi
+        cond_minus = windings < -2*np.pi
+    else:
+        windings = np.zeros(
+            (r, phase.shape[0], phase.shape[1]), dtype=np.float32)
+        for ir in range(r):
+            windings[ir, :, :] = phase_sum(velo, ir+1)
+        cond_plus = windings > 2*np.pi
+        cond_plus = cond_plus.all(axis=0)
+        cond_minus = windings < -2*np.pi
+        cond_minus = cond_minus.all(axis=0)
+    plus_y, plus_x = np.where(cond_plus)
+    minus_y, minus_x = np.where(cond_minus)
     vortices = np.zeros((len(plus_x)+len(minus_x), 3), dtype=np.float32)
     vortices[0:len(plus_x), 0] = plus_x
     vortices[0:len(plus_x), 1] = plus_y
@@ -540,12 +558,16 @@ def vortex_detection(phase: np.ndarray, plot: bool = False, r: int = 1) -> np.nd
     vortices[len(plus_x):, 1] = minus_y
     vortices[len(plus_x):, 2] = -1
     if plot:
-        velo = velocity(phase)
-        fig, ax = plt.subplots(figsize=[12, 9])
-        im = plt.imshow(phase, cmap='twilight_shifted')
-        ax.scatter(vortices[:, 0], vortices[:, 1],
-                   c=vortices[:, 2], cmap='bwr')
-        fig.colorbar(im, ax=ax, label="Phase")
+        if windings.ndim == 3:
+            windings = windings.mean(axis=0)
+        fig, ax = plt.subplots(1, 2, figsize=[8, 4])
+        im0 = ax[0].imshow(phase, cmap='twilight_shifted')
+        im1 = ax[1].imshow(windings, cmap='seismic',
+                           norm=colors.CenteredNorm(vcenter=0))
+        ax[0].scatter(vortices[:, 0], vortices[:, 1],
+                      c=vortices[:, 2], cmap='bwr')
+        fig.colorbar(im0, ax=ax[0], shrink=0.5, label="Vorticity")
+        fig.colorbar(im1, ax=ax[1], shrink=0.5, label="Winding")
         plt.show()
     return vortices
 
@@ -562,13 +584,29 @@ def vortex_detection_cp(phase: cp.ndarray, plot: bool = False,
         np.ndarray: A list of the vortices position and charge
     """
     velo = velocity_cp(phase)
-    windings = cp.zeros_like(velo[0])
+    if r > 1:
+        windings = cp.zeros(
+            (r, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    else:
+        windings = cp.zeros_like(velo[0], dtype=np.float32)
     tpb = 32
-    bpgx = math.ceil(windings.shape[0]/tpb)
-    bpgy = math.ceil(windings.shape[1]/tpb)
-    phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](velo, windings, r)
-    plus_y, plus_x = cp.where(windings > 2*np.pi)
-    minus_y, minus_x = cp.where(windings < -2*np.pi)
+    bpgx = math.ceil(phase.shape[0]/tpb)
+    bpgy = math.ceil(phase.shape[1]/tpb)
+    if r > 1:
+        for ir in range(r):
+            phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](
+                velo, windings[ir, :, :], ir+1)
+        cond_plus = windings > 2*np.pi
+        cond_plus = cond_plus.all(axis=0)
+        cond_minus = windings < -2*np.pi
+        cond_minus = cond_minus.all(axis=0)
+
+    else:
+        phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](velo, windings, r)
+        cond_plus = windings > 2*np.pi
+        cond_minus = windings < -2*np.pi
+    plus_y, plus_x = cp.where(cond_plus)
+    minus_y, minus_x = cp.where(cond_minus)
     vortices = cp.zeros((len(plus_x)+len(minus_x), 3), dtype=np.float32)
     vortices[0:len(plus_x), 0] = plus_x
     vortices[0:len(plus_x), 1] = plus_y
@@ -577,11 +615,16 @@ def vortex_detection_cp(phase: cp.ndarray, plot: bool = False,
     vortices[len(plus_x):, 1] = minus_y
     vortices[len(plus_x):, 2] = -1
     if plot:
-        plt.figure(1, figsize=[12, 9])
-        plt.imshow(phase.get(), cmap='twilight_shifted')
-        plt.scatter(vortices[:, 0].get(), vortices[:, 1].get(),
-                    c=vortices[:, 2].get(), cmap='bwr')
-        plt.colorbar(label="Vorticity")
+        if windings.ndim == 3:
+            windings = windings.mean(axis=0)
+        fig, ax = plt.subplots(1, 2, figsize=[8, 4])
+        im0 = ax[0].imshow(phase.get(), cmap='twilight_shifted')
+        im1 = ax[1].imshow(windings.get(), cmap='seismic',
+                           norm=colors.CenteredNorm(vcenter=0))
+        ax[0].scatter(vortices[:, 0].get(), vortices[:, 1].get(),
+                      c=vortices[:, 2].get(), cmap='bwr')
+        fig.colorbar(im0, ax=ax[0], shrink=0.5, label="Vorticity")
+        fig.colorbar(im1, ax=ax[1], shrink=0.5, label="Winding")
         plt.show()
     return vortices
 
