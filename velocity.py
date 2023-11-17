@@ -590,23 +590,41 @@ def vortex_detection_cp(phase: cp.ndarray, plot: bool = False,
     Args:
         phase (np.ndarray): Phase field.
         plot (bool, optional): Whether to plot the result or not. Defaults to True.
+        r (int or list, optionnal): Radius of the plaquette. Defaults to 1. 
+        If the radius is a list, will compute the winding for each radius and then
+        compare the results for each radius by taking the logical AND between the 
+        vortices found at each radius.
 
     Returns:
         np.ndarray: A list of the vortices position and charge
     """
     velo = velocity_cp(phase)
-    if r > 1:
-        windings = cp.zeros(
-            (r, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    if type(r) is int:
+        if r > 1:
+            windings = cp.zeros(
+                (r, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    elif type(r) is list:
+         windings = cp.zeros(
+            (len(r), phase.shape[-2], phase.shape[-1]), dtype=np.float32)
     else:
         windings = cp.zeros_like(velo[0], dtype=np.float32)
     tpb = 32
     bpgx = math.ceil(phase.shape[0]/tpb)
     bpgy = math.ceil(phase.shape[1]/tpb)
-    if r > 1:
-        for ir in range(r):
+    if type(r) is int:
+        if r>1:
+            for ir in range(r):
+                phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](
+                    velo, windings[ir, :, :], ir+1)
+            cond_plus = windings > 2*np.pi
+            cond_plus = cond_plus.all(axis=0)
+            cond_minus = windings < -2*np.pi
+            cond_minus = cond_minus.all(axis=0)
+    
+    elif type(r) is list:
+        for ir, rr in enumerate(r):
             phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](
-                velo, windings[ir, :, :], ir+1)
+                velo, windings[ir, :, :], rr)
         cond_plus = windings > 2*np.pi
         cond_plus = cond_plus.all(axis=0)
         cond_minus = windings < -2*np.pi
