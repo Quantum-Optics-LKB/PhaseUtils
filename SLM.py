@@ -124,7 +124,7 @@ def phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray = None,
         grat = grating(m, n, theta, pitch)
     # eq 4
     amp = inv_sinc(amp)
-    _phase_amplitude(amp, grat, phase)
+    _phase_amplitude(amp, phase, grat)
     phase *= cal_value
     return phase.astype(np.uint8)
 
