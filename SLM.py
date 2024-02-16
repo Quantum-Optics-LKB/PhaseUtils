@@ -53,7 +53,7 @@ class SLMscreen:
             name (str, optional): Name of the SLM window. Defaults to "SLM".
         """
         self.name = name
-        cv2.namedWindow(name, cv2.WND_PROP_FULLSCREEN)
+        cv2.namedWindow(name, cv2.WINDOW_NORMAL)
         shift = None
         for m in screeninfo.get_monitors():
             if str(position) in m.name:
