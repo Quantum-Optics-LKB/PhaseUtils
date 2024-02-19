@@ -1178,7 +1178,7 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
-        im_fft = plan_ifft(im_ifft)
+        im_ifft = plan_ifft(im_ifft)
     exp_angle_fast_scalar(im_ifft, im_ifft[im_ifft.shape[0]//2, im_ifft.shape[1]//2])
     if cont:
         return im_cont, im_ifft
