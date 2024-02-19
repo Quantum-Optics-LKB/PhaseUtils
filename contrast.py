@@ -1143,20 +1143,13 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
         plan_fft, plan_ifft = plans
     if radius == 0:
         radius = min(im.shape)//4
-    center = (im.shape[0]//4, im.shape[1]//4)
     assert len(im.shape) == 2, "Can only work with 2D images !"
-    # center of first quadran
-    im_ifft = pyfftw.empty_aligned(
-        (im.shape[0]//2, im.shape[1]//2), dtype=np.complex64)
     if plans is None:
         im_fft = pyfftw.interfaces.numpy_fft.rfft2(im)
     else:
         im_fft = plan_fft(im)
-    Y, X = np.ogrid[:im_fft.shape[0], :im_fft.shape[1]]
-    dist_from_center = np.hypot(X - center[1], Y-center[0])
-    mask = dist_from_center > radius
+    cont_size = int((np.sqrt(2)-1)*radius)
     if cont:
-        cont_size = int((np.sqrt(2)-1)*radius)
         im_ifft_cont = pyfftw.empty_aligned(
             (im.shape[0]//2, im.shape[1]//2), dtype=np.complex64)
         mask_cont = cache(cont_size, out=False, center=(0, 0),
@@ -1172,14 +1165,16 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
                                  0:im_ifft_cont.shape[1]]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.ifft2(im_ifft_cont)
-    im_fft[mask] = 0
-    im_ifft[:, :] = im_fft[:im_fft.shape[0]//2, :im_fft.shape[1]-1]
+    im_fft[0:cont_size//2, 0:cont_size//2] = 0
+    im_fft[-cont_size//2:, 0:cont_size//2] = 0
+    im_ifft = im_fft[:im_fft.shape[0]//2, :im_fft.shape[1]-1]
     im_ifft = np.fft.fftshift(im_ifft)
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
         im_ifft = plan_ifft(im_ifft)
-    exp_angle_fast_scalar(im_ifft, im_ifft[im_ifft.shape[0]//2, im_ifft.shape[1]//2])
+    exp_angle_fast_scalar(im_ifft,
+                          im_ifft[im_ifft.shape[0]//2, im_ifft.shape[1]//2])
     if cont:
         return im_cont, im_ifft
     return im_ifft
