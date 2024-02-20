@@ -11,6 +11,7 @@ from fast_interp import interp1d
 from scipy.interpolate import make_interp_spline
 import matplotlib.pyplot as plt
 import screeninfo
+from functools import lru_cache
 
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x)/x
@@ -173,7 +174,7 @@ def phase_only(intensity: np.ndarray, phase: np.ndarray,
 
     return phase_map.astype(np.uint8)
 
-
+@lru_cache(maxsize=10)
 @numba.njit(cache=True, parallel=True, boundscheck=False)
 def mgrid(m: int, n: int):
     """Numba compatible mgrid in i,j indexing style
@@ -192,7 +193,7 @@ def mgrid(m: int, n: int):
             yy[i, j] = i
     return yy, xx
 
-
+@lru_cache(maxsize=10)
 @numba.njit(fastmath=True, cache=True, parallel=True,
             boundscheck=False)
 def grating(m: int, n: int, theta: float = 45, pitch: int = 8) -> np.ndarray:
