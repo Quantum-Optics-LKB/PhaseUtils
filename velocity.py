@@ -442,15 +442,11 @@ def energy(ucomp: np.ndarray, uinc: np.ndarray) -> tuple:
         (Ucc, Uii): The total compressible and incompressible energies
     """
     # compressible
-    Ux_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[0])))
-    Uy_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[1])))
-    Uc = Ux_c**2 + Uy_c**2
+    Uc = np.abs(pyfftw.interfaces.numpy_fft.rfft2(ucomp))**2
     Ucc = np.sum(Uc)
 
     # incompressible
-    Ux_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[0])))
-    Uy_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[1])))
-    Ui = Ux_i**2 + Uy_i**2
+    Ui = np.abs(pyfftw.interfaces.numpy_fft.rfft2(uinc))**2
     Uii = np.sum(Ui)
 
     return Ucc, Uii
@@ -495,16 +491,12 @@ def energy_cp(ucomp: cp.ndarray, uinc: cp.ndarray) -> tuple:
     Returns:
         (Ucc, Uii): The total compressible and incompressible energies
     """
-    # compressible
-    Ux_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[0])))
-    Uy_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[1])))
-    Uc = Ux_c**2 + Uy_c**2
+     # compressible
+    Uc = cp.abs(cp.fft.rfft2(ucomp))**2
     Ucc = cp.sum(Uc)
 
     # incompressible
-    Ux_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[0])))
-    Uy_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[1])))
-    Ui = Ux_i**2 + Uy_i**2
+    Ui = cp.abs(cp.fft.rfft2(uinc))**2
     Uii = cp.sum(Ui)
 
     return Ucc, Uii
