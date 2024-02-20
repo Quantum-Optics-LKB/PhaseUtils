@@ -310,18 +310,18 @@ def helmholtz_decomp(field: np.ndarray, plot=False, dx: float = 1) -> tuple:
         print("No FFT wisdom found, starting over ...")
     sy, sx = field.shape
     # meshgrid in k space
-    kx = 2*np.pi*np.fft.fftfreq(sx, d=dx)
+    kx = 2*np.pi*np.fft.rfftfreq(sx, d=dx)
     ky = 2*np.pi*np.fft.fftfreq(sy, d=dx)
     K = np.array(np.meshgrid(kx, ky))
     phase = np.angle(field)
     velo = np.abs(field)*velocity(phase, dx)
 
     v_tot = np.hypot(velo[0], velo[1])
-    V_k = pyfftw.interfaces.numpy_fft.fft2(velo)
+    V_k = pyfftw.interfaces.numpy_fft.rfft2(velo)
 
     # Helmholtz decomposition fot the compressible part
     V_comp = -1j*np.sum(V_k*K, axis=0)/((np.sum(K**2, axis=0))+1e-15)
-    v_comp = np.real(pyfftw.interfaces.numpy_fft.ifft2(1j*V_comp*K))
+    v_comp = pyfftw.interfaces.numpy_fft.irfft2(1j*V_comp*K)
 
     # Helmholtz decomposition fot the incompressible part
     v_inc = velo - v_comp
@@ -379,7 +379,7 @@ def helmholtz_decomp_cp(field: np.ndarray, plot: bool = False, dx: float = 1,
     """
     sy, sx = field.shape
     # meshgrid in k space
-    kx = 2*np.pi*cp.fft.fftfreq(sx, d=dx)
+    kx = 2*np.pi*cp.fft.rfftfreq(sx, d=dx)
     ky = 2*np.pi*cp.fft.fftfreq(sy, d=dx)
     K = cp.array(cp.meshgrid(kx, ky))
     if regularize:
@@ -387,10 +387,10 @@ def helmholtz_decomp_cp(field: np.ndarray, plot: bool = False, dx: float = 1,
     else:
         velo = velocity_cp(cp.angle(field))
     v_tot = cp.hypot(velo[0], velo[1])
-    V_k = cp.fft.fft2(velo)
+    V_k = cp.fft.rfft2(velo)
     # Helmohltz decomposition fot the compressible part
     V_comp = -1j*cp.sum(V_k*K, axis=0)/((cp.sum(K**2, axis=0))+1e-15)
-    v_comp = cp.real(cp.fft.ifft2(1j*V_comp*K))
+    v_comp = cp.fft.irfft2(1j*V_comp*K)
     # Helmohltz decomposition fot the incompressible part
     v_inc = velo - v_comp
     if plot:
