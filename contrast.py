@@ -1128,11 +1128,11 @@ def im_osc_fast(im: np.ndarray, radius: int = 0, cont: bool = False,
                      :] = im_fft[im_fft.shape[0]-im_ifft_cont.shape[0]//2:im_fft.shape[0], 0:im_ifft_cont.shape[1]]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.irfft2(im_ifft_cont)
-    im_ifft[:im_ifft.shape[0]//2, :im_fft.shape[1]
-            ] = im_fft[:im_fft.shape[0]//2, :]
-    mask = disk(*im_ifft.shape, center=center, radius=radius)
-    im_ifft *= mask
-    im_ifft = np.roll(im_ifft, (-center[0], -center[1]), axis=(-2, -1))
+    mask = disk(*im_fft.shape, center=center, radius=radius)
+    im_fft *= mask
+    im_fft = np.roll(im_fft, (-center[0], -center[1]), axis=(-2, -1))
+    im_ifft[:, :radius] = im_fft[:, :radius]
+    im_ifft[:, -radius:] = im_fft[:, -radius:]
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
@@ -1140,8 +1140,8 @@ def im_osc_fast(im: np.ndarray, radius: int = 0, cont: bool = False,
     exp_angle_fast_scalar(
         im_ifft, im_ifft[im_ifft.shape[0]//2, im_ifft.shape[1]//2])
     if cont:
-        return im_cont, im_ifft
-    return im_ifft
+        return im_cont, im_ifft.copy()
+    return im_ifft.copy()
 
 
 def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
@@ -1198,8 +1198,8 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
     exp_angle_fast_scalar(im_ifft,
                           im_ifft[im_ifft.shape[0]//2, im_ifft.shape[1]//2])
     if cont:
-        return im_cont, im_ifft
-    return im_ifft
+        return im_cont, im_ifft.copy()
+    return im_ifft.copy()
                       
 def im_osc_fast_t_cp(im: cp.ndarray, radius: int = None, cont: bool = False, quadran: str = 'upper') -> cp.ndarray:
     """Fast field recovery assuming ideal reference angle i.e minimum fringe size of sqrt(2) pixels
