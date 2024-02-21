@@ -1109,7 +1109,7 @@ def im_osc_fast(im: np.ndarray, radius: int = 0, cont: bool = False,
         radius = min(im.shape)//4
     center = (im.shape[0]//4, im.shape[1]//4)
     assert len(im.shape) == 2, "Can only work with 2D images !"
-    im_ifft = pyfftw.zeros_aligned(im.shape, dtype=np.complex64)
+    im_ifft = np.empty(im.shape, dtype=np.complex64)
     if plans is None:
         im_fft = pyfftw.interfaces.numpy_fft.rfft2(im)
     else:
