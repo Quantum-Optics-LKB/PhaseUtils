@@ -1130,9 +1130,14 @@ def im_osc_fast(im: np.ndarray, radius: int = 0, cont: bool = False,
         im_cont = pyfftw.interfaces.numpy_fft.irfft2(im_ifft_cont)
     mask = disk(*im_fft.shape, center=center, radius=radius)
     im_fft *= mask
-    im_fft = np.roll(im_fft, (-center[0], -center[1]), axis=(-2, -1))
-    im_ifft[:, :radius] = im_fft[:, :radius]
-    im_ifft[:, -radius:] = im_fft[:, -radius:]
+    # upper left quadran
+    im_ifft[:radius, :radius] = im_fft[radius:2*radius, radius:-1]
+    # bottom left quadran
+    im_ifft[-radius:, :radius] = im_fft[:radius, radius:-1]
+    # upper right quadran
+    im_ifft[:radius, -radius:] = im_fft[radius:2*radius, :radius]
+    # bottom right quadran
+    im_ifft[-radius:, -radius:] = im_fft[:radius, :radius]
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
@@ -1186,11 +1191,11 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
                                  0:im_ifft_cont.shape[1]]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.ifft2(im_ifft_cont)
-    im_ifft = im_fft[:im_fft.shape[0]//2, :im_fft.shape[1]-1]
-    mask = disk(*im_ifft.shape, center=(im_ifft.shape[0]//2, im_ifft.shape[1]//2),
+    im_fft = im_fft[:im_fft.shape[0]//2, :im_fft.shape[1]-1]
+    mask = disk(*im_fft.shape, center=(im_fft.shape[0]//2, im_fft.shape[1]//2),
                 radius=radius)
-    im_ifft *= mask
-    im_ifft = np.fft.fftshift(im_ifft)
+    im_fft *= mask
+    im_ifft = np.fft.fftshift(im_fft)
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
