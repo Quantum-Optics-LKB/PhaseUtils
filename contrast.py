@@ -1175,6 +1175,8 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
     if radius == 0:
         radius = min(im_fft.shape)//2
     cont_size = int((np.sqrt(2)-1)*radius)
+    im_ifft = np.empty(
+        (im.shape[0]//2, im.shape[1]//2), dtype=np.complex64)
     if cont:
         im_ifft_cont = pyfftw.empty_aligned(
             (im.shape[0]//2, im.shape[1]//2), dtype=np.complex64)
@@ -1195,7 +1197,14 @@ def im_osc_fast_t(im: np.ndarray, radius: int = 0, cont: bool = False,
     mask = disk(*im_fft.shape, center=(im_fft.shape[0]//2, im_fft.shape[1]//2),
                 radius=radius)
     im_fft *= mask
-    im_ifft = np.fft.fftshift(im_fft)
+    # upper left quadran
+    im_ifft[:radius, :radius] = im_fft[radius:, radius:]
+    # bottom left quadran
+    im_ifft[-radius:, :radius] = im_fft[:radius, radius:]
+    # upper right quadran
+    im_ifft[:radius, -radius:] = im_fft[radius:, :radius]
+    # bottom right quadran
+    im_ifft[-radius:, -radius:] = im_fft[:radius, :radius]
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
