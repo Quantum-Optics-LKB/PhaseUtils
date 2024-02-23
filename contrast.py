@@ -158,7 +158,7 @@ def angle_fast_cp(x: cp.ndarray, out: cp.ndarray):
 @numba.njit((numba.complex64[:, :], numba.complex64[:, :]), fastmath=True,
             nogil=True, cache=True, parallel=True)
 def exp_angle_fast(x: np.ndarray, y: np.ndarray):
-    """Fast multiplication by exp(1j*x)
+    """Fast multiplication by exp(-1j*x)
 
     Args:
         x (np.ndarray): The complex field
@@ -168,13 +168,13 @@ def exp_angle_fast(x: np.ndarray, y: np.ndarray):
     """
     for i in numba.prange(x.shape[0]):
         for j in range(x.shape[1]):
-            x[i, j] *= cmath.exp(1j*cmath.phase(y[i, j]))
+            x[i, j] *= cmath.exp(-1j*cmath.phase(y[i, j]))
 
 
 @numba.njit((numba.complex64[:, :], numba.complex64), fastmath=True,
             nogil=True, cache=True, parallel=True)
 def exp_angle_fast_scalar(x: np.ndarray, y: complex):
-    """Fast multiplication by exp(1j*y)
+    """Fast multiplication by exp(-1j*y)
 
     Args:
         x (np.ndarray): The input array
@@ -184,7 +184,7 @@ def exp_angle_fast_scalar(x: np.ndarray, y: complex):
     """
     for i in numba.prange(x.shape[0]):
         for j in range(x.shape[1]):
-            x[i, j] *= cmath.exp(1j*cmath.phase(y))
+            x[i, j] *= cmath.exp(-1j*cmath.phase(y))
 
 @lru_cache(maxsize=10)
 @numba.njit(cache=True, parallel=True, boundscheck=False)
