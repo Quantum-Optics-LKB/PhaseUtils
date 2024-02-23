@@ -1093,7 +1093,9 @@ def phase_center(im: np.ndarray, center: tuple, mask_osc_flood: np.ndarray = Non
 def im_osc_fast(
     im: np.ndarray, radius: int = 0, cont: bool = False, plans: Any = None
 ) -> np.ndarray:
-    """Fast field recovery assuming ideal reference angle i.e minimum fringe
+    """Return the field.
+
+    Fast field recovery assuming ideal reference angle i.e minimum fringe
     size of sqrt(2) pixels.
 
     Args:
@@ -1147,15 +1149,35 @@ def im_osc_fast(
     mask = disk(*im_fft.shape[-2:], center=center, radius=radius)
     im_fft *= mask
     # upper left quadran
-    im_ifft[..., :radius, :radius] = im_fft[
-        ..., radius : 2 * radius, radius:-1
+    im_ifft[
+        ...,
+        :radius,
+        :radius,
+    ] = im_fft[
+        ...,
+        center[0] : center[0] + radius,
+        center[1] : center[1] + radius,
     ]
     # bottom left quadran
-    im_ifft[..., -radius:, :radius] = im_fft[..., :radius, radius:-1]
+    im_ifft[..., -radius:, :radius] = im_fft[
+        ...,
+        center[0] - radius : center[0],
+        center[1] : center[1] + radius,
+    ]
     # upper right quadran
-    im_ifft[..., :radius, -radius:] = im_fft[..., radius : 2 * radius, :radius]
+    im_ifft[..., :radius, -radius:] = im_fft[
+        ..., center[0] : center[0] + radius, center[1] - radius : center[1]
+    ]
     # bottom right quadran
-    im_ifft[..., -radius:, -radius:] = im_fft[..., :radius, :radius]
+    im_ifft[..., -radius:, -radius:] = im_fft[
+        ..., center[0] - radius : center[0], center[1] - radius : center[1]
+    ]
+    # set the rest to 0 bc np.empty does not instantiate an actual empty array
+    im_ifft[..., radius:-radius, radius:-radius] = 0
+    im_ifft[..., radius:-radius, :radius] = 0
+    im_ifft[..., radius:-radius, -radius:] = 0
+    im_ifft[..., -radius:, radius:-radius] = 0
+    im_ifft[..., :radius, radius:-radius] = 0
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
@@ -1172,7 +1194,9 @@ def im_osc_fast(
 def im_osc_fast_t(
     im: np.ndarray, radius: int = 0, cont: bool = False, plans: Any = None
 ) -> np.ndarray:
-    """Fast field recovery assuming ideal reference angle i.e minimum fringe
+    """Return the field.
+
+    Fast field recovery assuming ideal reference angle i.e minimum fringe
     size of sqrt(2) pixels.
 
     Truncated for optimal speed: returns an array with size (Ny//2, Nx//2)
@@ -1199,6 +1223,7 @@ def im_osc_fast_t(
         im_fft = plan_fft(im)
     if radius == 0:
         radius = min(im_fft.shape[-2:]) // 2
+    center = (im_fft.shape[-2] // 4, im_fft.shape[-1] // 2)
     im_ifft_shape = np.array(im.shape)
     im_ifft_shape[-2:] = im_ifft_shape[-2:] // 2
     im_ifft = np.empty(im_ifft_shape, dtype=np.complex64)
@@ -1236,13 +1261,41 @@ def im_osc_fast_t(
     )
     im_fft *= mask
     # upper left quadran
-    im_ifft[..., :radius, :radius] = im_fft[..., radius:, radius:]
+    im_ifft[
+        ...,
+        :radius,
+        :radius,
+    ] = im_fft[
+        ...,
+        center[0] : center[0] + radius,
+        center[1] : center[1] + radius,
+    ]
     # bottom left quadran
-    im_ifft[..., -radius:, :radius] = im_fft[..., :radius, radius:]
+    im_ifft[..., -radius:, :radius] = im_fft[
+        ...,
+        center[0] - radius : center[0],
+        center[1] : center[1] + radius,
+    ]
     # upper right quadran
-    im_ifft[..., :radius, -radius:] = im_fft[..., radius:, :radius]
+    im_ifft[..., :radius, -radius:] = im_fft[
+        ..., center[0] : center[0] + radius, center[1] - radius : center[1]
+    ]
     # bottom right quadran
-    im_ifft[..., -radius:, -radius:] = im_fft[..., :radius, :radius]
+    im_ifft[..., -radius:, -radius:] = im_fft[
+        ..., center[0] - radius : center[0], center[1] - radius : center[1]
+    ]
+    if radius < im_fft.shape[-2] // 2:
+        # set the rest to 0 bc np.empty does not instantiate an actual
+        # empty array
+        im_ifft[..., radius:-radius, radius:-radius] = 0
+        im_ifft[..., radius:-radius, :radius] = 0
+        im_ifft[..., radius:-radius, -radius:] = 0
+        im_ifft[..., -radius:, radius:-radius] = 0
+        im_ifft[..., :radius, radius:-radius] = 0
+    # bottom right quadran
+    im_ifft[..., -radius:, -radius:] = im_fft[
+        ..., center[0] - radius : center[0], center[1] - radius : center[1]
+    ]
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
