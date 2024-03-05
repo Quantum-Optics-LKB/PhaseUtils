@@ -1267,7 +1267,7 @@ def im_osc_fast_t(
         radius=radius,
     )
     im_fft *= mask
-    im_ifft = np.fft.fftshift()
+    im_ifft = np.fft.fftshift(im_fft, axes=(-2, -1))
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
