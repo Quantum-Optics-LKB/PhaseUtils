@@ -1192,7 +1192,11 @@ def im_osc_fast(
 
 
 def im_osc_fast_t(
-    im: np.ndarray, radius: int = 0, cont: bool = False, plans: Any = None
+    im: np.ndarray,
+    radius: int = 0,
+    center: Any = None,
+    cont: bool = False,
+    plans: Any = None,
 ) -> np.ndarray:
     """Return the field.
 
@@ -1204,6 +1208,7 @@ def im_osc_fast_t(
 
     Args:
         im (cp.ndarray): Interferogram
+        center (tuple, optional): Center of the field. Defaults to (Ny//4, Nx//4).
         radius (int, optional): Radius of filter in px. Defaults to 512.
         cont (bool, optionnal): Returns the continuous part of the field.
         Defaults to False.
@@ -1223,10 +1228,8 @@ def im_osc_fast_t(
         im_fft = plan_fft(im)
     if radius == 0:
         radius = min(im_fft.shape[-2:]) // 2
-    center = (im_fft.shape[-2] // 4, im_fft.shape[-1] // 2)
-    im_ifft_shape = np.array(im.shape)
-    im_ifft_shape[-2:] = im_ifft_shape[-2:] // 2
-    im_ifft = np.empty(im_ifft_shape, dtype=np.complex64)
+    if center is None:
+        center = (im_fft.shape[-2] // 4, im_fft.shape[-1] // 2)
     if cont:
         cont_size = int((np.sqrt(2) - 1) * radius)
         im_ifft_cont = pyfftw.empty_aligned(
@@ -1253,49 +1256,18 @@ def im_osc_fast_t(
         ]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.ifft2(im_ifft_cont)
-    im_fft = im_fft[..., : im_fft.shape[-2] // 2, : im_fft.shape[-1] - 1]
+    im_fft = im_fft[
+        ...,
+        center[0] - im_fft.shape[-2] // 4 : center[0] + im_fft.shape[-2] // 4,
+        : im_fft.shape[-1] - 1,
+    ]
     mask = disk(
         *im_fft.shape[-2:],
         center=(im_fft.shape[-2] // 2, im_fft.shape[-1] // 2),
         radius=radius,
     )
     im_fft *= mask
-    # upper left quadran
-    im_ifft[
-        ...,
-        :radius,
-        :radius,
-    ] = im_fft[
-        ...,
-        center[0] : center[0] + radius,
-        center[1] : center[1] + radius,
-    ]
-    # bottom left quadran
-    im_ifft[..., -radius:, :radius] = im_fft[
-        ...,
-        center[0] - radius : center[0],
-        center[1] : center[1] + radius,
-    ]
-    # upper right quadran
-    im_ifft[..., :radius, -radius:] = im_fft[
-        ..., center[0] : center[0] + radius, center[1] - radius : center[1]
-    ]
-    # bottom right quadran
-    im_ifft[..., -radius:, -radius:] = im_fft[
-        ..., center[0] - radius : center[0], center[1] - radius : center[1]
-    ]
-    if radius < im_fft.shape[-2] // 2:
-        # set the rest to 0 bc np.empty does not instantiate an actual
-        # empty array
-        im_ifft[..., radius:-radius, radius:-radius] = 0
-        im_ifft[..., radius:-radius, :radius] = 0
-        im_ifft[..., radius:-radius, -radius:] = 0
-        im_ifft[..., -radius:, radius:-radius] = 0
-        im_ifft[..., :radius, radius:-radius] = 0
-    # bottom right quadran
-    im_ifft[..., -radius:, -radius:] = im_fft[
-        ..., center[0] - radius : center[0], center[1] - radius : center[1]
-    ]
+    im_ifft = np.fft.fftshift()
     if plans is None:
         im_ifft = pyfftw.interfaces.numpy_fft.ifft2(im_ifft)
     else:
