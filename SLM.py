@@ -127,6 +127,7 @@ def phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray = None,
     amp = inv_sinc(amp)
     _phase_amplitude(amp, phase, grat)
     phase *= cal_value
+    phase = np.round(phase)
     return phase.astype(np.uint8)
 
 
