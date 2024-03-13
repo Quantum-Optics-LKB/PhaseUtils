@@ -90,7 +90,7 @@ def monitor_fourier_fringes(cam: Any) -> None:
     # need to assign the animation to a variable or else it gets immediately
     # garbage collected
     anim = animation.FuncAnimation(fig, animate,
-                                    interval=50, blit=True)
+                                    interval=16, blit=True, cache_frame_data=False)
     plt.show(block=True)
 
 def monitor_phase(cam: Any):
@@ -181,7 +181,9 @@ def monitor_fourier_space(cam: any) -> None:
         im1.set_data(frames)
         return im0, im1
     anim = animation.FuncAnimation(fig, animate,
-                                    interval=33, blit=True)
+                                   interval=16, 
+                                   blit=True, 
+                                   cache_frame_data=False)
     plt.show(block=True)
 
 
