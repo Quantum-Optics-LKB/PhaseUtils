@@ -186,17 +186,17 @@ def monitor_fourier_space(cam: any) -> None:
 
 
 
-def monitor_abs_speed(cam: any , y_range:int ) -> None:
+def monitor_abs_speed(cam: Any, y_range: int) -> tuple:
     """Displays a pop up window to monitor in live the intensity of the field, a cut of the intensity and of the gradient of the phase
     the figure also displays a rectangle on top of the intensity image to show the zone where the cut and averaging are done.
     Some sliders are also available to change the position and size of the rectangle.
 
     Args:
-        cam (any): the camera object
+        cam (Any): the camera object
 
     Returns:
         frame (np.array): the last frame captured by the camera
-        cont (np.array): the last intensity image compurted from frame
+        cont (np.array): the last intensity image computed from frame
         phase (np.array): the last phase image computed from frame
     """
     # grab first frame for reference
@@ -224,9 +224,9 @@ def monitor_abs_speed(cam: any , y_range:int ) -> None:
 
     # Creation of the figure
     fig = plt.figure(figsize=(10, 5))
-    ax0 = fig.add_subplot(221)  # Subplot en haut à gauche
-    ax1 = fig.add_subplot(223)  # Subplot en bas à gauche
-    ax2 = fig.add_subplot(122)  # Subplot à droite
+    ax0 = fig.add_subplot(221)  # Subplot top left
+    ax1 = fig.add_subplot(223)  # Subplot bottom right
+    ax2 = fig.add_subplot(122)  # Subplot right
     divider2 = make_axes_locatable(ax2)
     cax2 = divider2.append_axes("right", size="5%", pad=0.05)
 
@@ -239,71 +239,62 @@ def monitor_abs_speed(cam: any , y_range:int ) -> None:
     fig.colorbar(im2, cax=cax2)
     ax0.set_title("Mean density along y")
     ax1.set_title("Speed of the fluid along y")
-    #plt.tight_layout()
     
-    # Créer un rectangle pour mettre en évidence la zone de l'image sur laquelle on calcule vitesses et densités
+    # Creates a rectangular patch highlighting the ROI on which the density and velocity are averaged
     x1, y1 = cut_x-mean_range//2, cut_y-y_range//2   
     rectangle = plt.Rectangle((x1, y1), mean_range, y_range, edgecolor='black', linestyle='--', linewidth=2, fill=False)
-    # Ajouter le rectangle à l'image de densité actuelle
+    # Add the patch on top of the plot
     ax2.add_patch(rectangle)
 
 
-    # Créer les curseurs pour modifier la position et la taille du rectangle
+    # Sliders to control rectangle location and size
     rect_x_slider_ax = fig.add_axes([0.1, 0.03, 0.65, 0.03])
     rect_y_slider_ax = fig.add_axes([0.1, 0.01, 0.65, 0.03])
     rect_width_slider_ax = fig.add_axes([0.1, 0.05, 0.65, 0.03])
-    #rect_height_slider_ax = fig.add_axes([0.1, 0.07, 0.65, 0.03])
 
     rect_x_slider = Slider(rect_x_slider_ax, 'pos X', 0, phase.shape[1], valinit=x1)
     rect_y_slider = Slider(rect_y_slider_ax, 'pos Y', 0, phase.shape[0], valinit=y1)
     rect_width_slider = Slider(rect_width_slider_ax, 'Width', 0, phase.shape[1], valinit=mean_range)
-    #rect_height_slider = Slider(rect_height_slider_ax, 'Height', 0, phase.shape[0], valinit=y_range)
     
     plt.subplots_adjust(top=0.95)
     def update(val):
-        # Mettre à jour la position et la taille du rectangle
+        # Update location and size of the rectangle
         rectangle.set_xy((rect_x_slider.val, rect_y_slider.val))
         rectangle.set_width(rect_width_slider.val)
-        #rectangle.set_height(rect_height_slider.val)
         fig.canvas.draw_idle()
 
-    # Connecter la fonction de mise à jour aux curseurs
+    # Connect update function to the sliders
     rect_x_slider.on_changed(update)
     rect_y_slider.on_changed(update)
     rect_width_slider.on_changed(update)
-    #rect_height_slider.on_changed(update)
 
 
 
-    def animate(i):
+    def animate(i: int) -> tuple:
         """Animation function for the window
 
         Args:
             i (int): Counter from the animate function
+
+        Returns:
+            im0, im1, im2, rectangle: the tuple containing the updated artists
         """
         ret, frame = cam.read()
         im_fringe[:, :] = contrast.im_osc_fast_t(frame, cont=False)
-        
-        x1, y1 = int(rect_x_slider.val), int(rect_y_slider.val)
+        x1, y1 = int(np.round(rect_x_slider.val)), int(np.round(rect_y_slider.val))
         mean_range = int(rect_width_slider.val)
-        
-        
         phase[:, :] = contrast.angle_fast(im_fringe)
         cont[:, :] = np.abs(im_fringe)
         unwr_phase = np.unwrap(phase, axis=0)
-        mean_uwr_phase = np.mean(unwr_phase[y1:y1+y_range ,x1: x1+mean_range ], axis = 1)
-        mean_dens = np.mean(cont[y1:y1+y_range ,x1: x1+mean_range ], axis = 1)
+        mean_uwr_phase = np.mean(unwr_phase[y1:y1+y_range, x1:x1+mean_range], axis = 1)
+        mean_dens = np.mean(cont[y1:y1+y_range, x1:x1+mean_range ], axis = 1)
         speed = np.gradient(mean_uwr_phase)/r_calib
-        
         im0.set_ydata(mean_dens)
         im1.set_ydata(speed)
-        
         im2.set_data(cont)
-        
-        # Mettre à jour la position et la taille du rectangle
+        # Update rectangle's size and location
         rectangle.set_xy((rect_x_slider.val, rect_y_slider.val))
         rectangle.set_width(rect_width_slider.val)
-        #rectangle.set_height(rect_height_slider.val)
         return im0, im1 , im2, rectangle
     
     anim = animation.FuncAnimation(fig, animate,
@@ -311,4 +302,4 @@ def monitor_abs_speed(cam: any , y_range:int ) -> None:
     plt.show(block=True)
 
     
-    return(phase , cont, frame)
+    return phase, cont, frame
