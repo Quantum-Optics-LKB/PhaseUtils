@@ -23,7 +23,7 @@ import math
 from typing import Any
 import multiprocessing
 pyfftw.interfaces.cache.enable()
-pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()//2
+pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
 # try to load previous fftw wisdom
 try:
     with open("fft.wisdom", "rb") as file:
