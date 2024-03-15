@@ -1146,6 +1146,12 @@ def im_osc_fast(
         ]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.irfft2(im_ifft_cont)
+    if center is not None:
+        offset = (
+            -center[0] + im_fft.shape[-2] // 2,
+            -center[1] + im_fft.shape[-1] // 2,
+        )
+        im_fft = np.roll(im_fft, offset, axis=(-2, -1))
     mask = disk(*im_fft.shape[-2:], center=center, radius=radius)
     im_fft *= mask
     # upper left quadran
@@ -1261,6 +1267,12 @@ def im_osc_fast_t(
         center[0] - im_fft.shape[-2] // 4 : center[0] + im_fft.shape[-2] // 4,
         : im_fft.shape[-1] - 1,
     ]
+    if center is not None:
+        offset = (
+            -center[0] + im.shape[-2] // 2,
+            -center[1] + im_fft.shape[-1] // 2,
+        )
+        im_fft = np.roll(im_fft, offset, axis=(-2, -1))
     mask = disk(
         *im_fft.shape[-2:],
         center=(im_fft.shape[-2] // 2, im_fft.shape[-1] // 2),
