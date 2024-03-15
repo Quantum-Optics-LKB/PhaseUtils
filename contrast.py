@@ -23,7 +23,7 @@ import math
 from typing import Any
 import multiprocessing
 pyfftw.interfaces.cache.enable()
-pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()//2
+pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
 # try to load previous fftw wisdom
 try:
     with open("fft.wisdom", "rb") as file:
@@ -123,7 +123,7 @@ def az_avg_cp(image: cp.ndarray, center: tuple) -> cp.ndarray:
     return prof
 
 
-@numba.njit(numba.float32[:, :](numba.complex64[:, :]), fastmath=True, cache=True, parallel=True)
+@numba.njit(fastmath=True, cache=True, parallel=True)
 def angle_fast(x: np.ndarray) -> np.ndarray:
     """Accelerates a smidge angle by using fastmath
 
@@ -155,7 +155,7 @@ def angle_fast_cp(x: cp.ndarray, out: cp.ndarray):
         if j < x.shape[1]:
             out[i, j] = cmath.phase(x[i, j])
 
-@numba.njit((numba.complex64[:, :], numba.complex64[:, :]), fastmath=True,
+@numba.njit(fastmath=True,
             nogil=True, cache=True, parallel=True)
 def exp_angle_fast(x: np.ndarray, y: np.ndarray):
     """Fast multiplication by exp(-1j*x)
@@ -171,7 +171,7 @@ def exp_angle_fast(x: np.ndarray, y: np.ndarray):
             x[i, j] *= cmath.exp(-1j*cmath.phase(y[i, j]))
 
 
-@numba.njit((numba.complex64[:, :], numba.complex64), fastmath=True,
+@numba.njit(fastmath=True,
             nogil=True, cache=True, parallel=True)
 def exp_angle_fast_scalar(x: np.ndarray, y: complex):
     """Fast multiplication by exp(-1j*y)
