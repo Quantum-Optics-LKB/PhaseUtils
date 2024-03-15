@@ -1091,7 +1091,11 @@ def phase_center(im: np.ndarray, center: tuple, mask_osc_flood: np.ndarray = Non
 
 
 def im_osc_fast(
-    im: np.ndarray, radius: int = 0, cont: bool = False, plans: Any = None
+    im: np.ndarray,
+    radius: int = 0,
+    cont: bool = False,
+    plans: Any = None,
+    center: tuple = None,
 ) -> np.ndarray:
     """Return the field.
 
@@ -1104,6 +1108,8 @@ def im_osc_fast(
         return_cont (bool, optionnal): Returns the continuous part of the
         field.
         Defaults to False.
+        center (tuple, optionnal): The position of the peak in Fourier domain.
+        Defaults to None.
         plans (FFTW plan list, optionnal): [plan_fft, plan_ifft] for optional
         plan caching
 
@@ -1114,14 +1120,15 @@ def im_osc_fast(
         plan_fft, plan_ifft = plans
     if radius == 0:
         radius = min(im.shape[-2:]) // 4
-    center = (im.shape[-2] // 4, im.shape[-1] // 4)
+    if center is None:
+        center = (im.shape[-2] // 4, im.shape[-1] // 4)
     im_ifft = np.empty(im.shape, dtype=np.complex64)
     if plans is None:
         im_fft = pyfftw.interfaces.numpy_fft.rfft2(im)
     else:
         im_fft = plan_fft(im)
-    cont_size = int((np.sqrt(2) - 1) * radius)
     if cont:
+        cont_size = int((np.sqrt(2) - 1) * radius)
         im_ifft_cont = pyfftw.empty_aligned(
             (im.shape[-2], im.shape[-1] // 2 + 1), dtype=np.complex64
         )
@@ -1152,31 +1159,35 @@ def im_osc_fast(
             -center[1] + im_fft.shape[-1] // 2,
         )
         im_fft = np.roll(im_fft, offset, axis=(-2, -1))
-    mask = disk(*im_fft.shape[-2:], center=center, radius=radius)
+    mask = disk(
+        *im_fft.shape[-2:],
+        center=(im_fft.shape[-2] // 2, im_fft.shape[-1] // 2),
+        radius=radius,
+    )
     im_fft *= mask
     # upper left quadran
-    im_ifft[
+    im_ifft[..., :radius, :radius] = im_fft[
         ...,
-        :radius,
-        :radius,
-    ] = im_fft[
-        ...,
-        center[0] : center[0] + radius,
-        center[1] : center[1] + radius,
+        im_fft.shape[-2] // 2 : im_fft.shape[-2] // 2 + radius,
+        im_fft.shape[-1] // 2 : im_fft.shape[-1] // 2 + radius,
     ]
     # bottom left quadran
     im_ifft[..., -radius:, :radius] = im_fft[
         ...,
-        center[0] - radius : center[0],
-        center[1] : center[1] + radius,
+        im_fft.shape[-2] // 2 - radius : im_fft.shape[-2] // 2,
+        im_fft.shape[-1] // 2 : im_fft.shape[-1] // 2 + radius,
     ]
     # upper right quadran
     im_ifft[..., :radius, -radius:] = im_fft[
-        ..., center[0] : center[0] + radius, center[1] - radius : center[1]
+        ...,
+        im_fft.shape[-2] // 2 : im_fft.shape[-2] // 2 + radius,
+        im_fft.shape[-1] // 2 - radius : im_fft.shape[-1] // 2,
     ]
     # bottom right quadran
     im_ifft[..., -radius:, -radius:] = im_fft[
-        ..., center[0] - radius : center[0], center[1] - radius : center[1]
+        ...,
+        im_fft.shape[-2] // 2 - radius : im_fft.shape[-2] // 2,
+        im_fft.shape[-1] // 2 - radius : im_fft.shape[-1] // 2,
     ]
     # set the rest to 0 bc np.empty does not instantiate an actual empty array
     im_ifft[..., radius:-radius, radius:-radius] = 0
@@ -1262,17 +1273,17 @@ def im_osc_fast_t(
         ]
         im_ifft_cont[np.logical_not(mask_cont)] = 0
         im_cont = pyfftw.interfaces.numpy_fft.ifft2(im_ifft_cont)
-    im_fft = im_fft[
-        ...,
-        center[0] - im_fft.shape[-2] // 4 : center[0] + im_fft.shape[-2] // 4,
-        : im_fft.shape[-1] - 1,
-    ]
     if center is not None:
         offset = (
-            -center[0] + im.shape[-2] // 2,
+            -center[0] + im_fft.shape[-2] // 2,
             -center[1] + im_fft.shape[-1] // 2,
         )
         im_fft = np.roll(im_fft, offset, axis=(-2, -1))
+    im_fft = im_fft[
+        ...,
+        im_fft.shape[-2] // 4 : -im_fft.shape[-2] // 4,
+        : im_fft.shape[-1] - 1,
+    ]
     mask = disk(
         *im_fft.shape[-2:],
         center=(im_fft.shape[-2] // 2, im_fft.shape[-1] // 2),
