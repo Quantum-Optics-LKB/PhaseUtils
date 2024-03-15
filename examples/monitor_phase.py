@@ -188,22 +188,21 @@ def monitor_fourier_space(cam: any) -> None:
 
 
 
-def monitor_abs_speed(cam: Any, y_range: int) -> tuple:
+def monitor_abs_speed(cam: Any, y_range: int , r_calib = 0.08*2) -> tuple:
     """Displays a pop up window to monitor in live the intensity of the field, a cut of the intensity and of the gradient of the phase
     the figure also displays a rectangle on top of the intensity image to show the zone where the cut and averaging are done.
     Some sliders are also available to change the position and size of the rectangle.
 
     Args:
-        cam (Any): the camera object
-
+        cam (any): the camera object
+        y_range (int): the range of the cut and averaging
+        r_calib (float): the calibration factor for the imaging system times 2 because of lose of spatial resolution in the fft
     Returns:
         frame (np.array): the last frame captured by the camera
-        cont (np.array): the last intensity image computed from frame
+        cont (np.array): the last intensity image compurted from frame
         phase (np.array): the last phase image computed from frame
     """
     # grab first frame for reference
-
-    r_calib = 0.08
 
     ret, frame = cam.read()
     im_fringe = contrast.im_osc_fast_t(frame, cont=False)
