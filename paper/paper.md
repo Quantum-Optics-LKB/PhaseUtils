@@ -22,11 +22,17 @@ bibliography: paper.bib
 
 # Summary
 
-qzrgazeg
+Off-axis interferometry is a powerful technique that allows full-field retrieval from interferograms [@lieblingComplexwaveRetrievalSingle2004]
+[@verrierOffaxisDigitalHologram2011].
+Based on the deconvolution of the inteferograms using Fourier transforms, it allows live monitoring of optical fields.
+It comprises of two packages `contrast` and `velocity`.
+`contrast` is focused on the retrieval of the phase.
+`velocity` is focused on the processing of the complex field.
 
 # Statement of need
 
-`PhaseUtils` harnesses the power blablabal
+`PhaseUtils` harnesses the power of modern FFT algorithms to deliver performance focused tools to retrieve and process the phase information of optical fields.
+This allows to compute a large number of observables relevant in the context of quantum fluids of light [@aladjidiFullOpticalControl2023] [@glorieuxHotAtomicVapors2023].
 
 # Acknowledgements
 
@@ -34,6 +40,6 @@ We acknowledge contributions from Gilles, Maïkeul and Bébert le camembert.
 
 # Authors contribution
 
-T.A wrote the original code and is the main maintainer, Myrann Baker-Rasooli
+T.A wrote the original code and is the main maintainer, Myrann Baker-Rasooli has contributed on the vortex detection and classification routines.
 
 # References

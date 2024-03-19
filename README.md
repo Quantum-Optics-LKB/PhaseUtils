@@ -97,9 +97,11 @@ Then, we switch to another representation for the vortices to facilitate cluster
 Then, using the `clustering` routine we apply the second rule by checking if each nearest neighbor of the vortices in the queue belong to a dipole or not. If not, we can link each member of the queue to its closest neighbor. After having applied this function, we thus have a graph that completely represents the vortices that are not a dipole pair.\
 Finally, we only need to extract the connected components of this graph to retrieve the various clusters of vortices, which is a built-in feature of `networkx`'s `Graph` object. 
 
-### The `main` function
+### Examples and tests
 
-An overview is presented within the `main` function (that runs if you call `python velocity.py`). There are also some benchmarks to allow you to chose the best performing implementations between GPU and CPU. A sample of real phase data is given `v500_1_phase.gz` : a 1024 by 1024 array that contains 2981 vortices. On this real data here are some typical times for a 8-core Intel Xeon / Nvidia GeForce RTX 3000 equipped laptop :
+An overview is presented within the `examples/demo_contrast.ipynb` Jupyter notebook.
+It explains the principles of off-axis holography.
+There are also some benchmarks in `examples/tests.py` to allow you to chose the best performing implementations between GPU and CPU. A sample of real phase data is given `v500_1_phase.txt` : a 1024 by 1024 array that contains 2981 vortices. On this real data here are some typical times for a 8-core Intel Xeon / Nvidia GeForce RTX 3000 equipped laptop :
 - `vortex_detection` 50 ms
 - `vortex_detection_cp` 5 ms (1.7 ms on a RTX3090)
 - `helmholtz_decomposition` 130 ms
@@ -109,6 +111,4 @@ An overview is presented within the `main` function (that runs if you call `pyth
 These speeds (especially on the GPU) allow for practical **real time tracking of vortices**. Furthermore the clustering algorithm shows a nice $O(N~log(N))$ tested complexity.
 
 ## Other references
-[Modulated gratings](https://opg.optica.org/abstract.cfm?URI=ao-42-11-2003)
-[Transit preprint](https://arxiv.org/abs/2202.05764)
 [VortexDistributions.jl](https://github.com/AshtonSBradley/VortexDistributions.jl) A Julia based implementation of the authors of the excellent paper about clustering. Lacks the clustering routines on the main branch. 
