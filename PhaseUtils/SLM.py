@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import numba
 import math
-from fast_interp import interp1d
+from PhaseUtils.fast_interp import interp1d
 from scipy.interpolate import make_interp_spline
 import matplotlib.pyplot as plt
 import screeninfo

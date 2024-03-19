@@ -4,60 +4,26 @@ Created on Wed Sep 14 20:45:44 2022
 
 @author: Tangui Aladjidi
 """
+
 from scipy import spatial
 from numba import cuda
 import numba
 import matplotlib.pyplot as plt
-import time
 import math
 import numpy as np
 import pyfftw
 import pickle
 import cupy as cp
 import networkx as nx
+import multiprocessing
+from matplotlib import colors
+
+pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
+pyfftw.config.PLANNER_EFFORT = "FFTW_MEASURE"
 pyfftw.interfaces.cache.enable()
 
-# simple timing decorator
 
-
-def timer(func):
-    """This function shows the execution time of
-    the function object passed"""
-    def wrap_func(*args, **kwargs):
-        t1 = time.perf_counter()
-        result = func(*args, **kwargs)
-        t2 = time.perf_counter()
-        print(f'Function {func.__name__!r} executed in {(t2-t1)*1e3:.4f} ms')
-        return result
-    return wrap_func
-
-
-def timer_repeat(func, *args, N_repeat=1000):
-    t = np.zeros(N_repeat, dtype=np.float32)
-    for i in range(N_repeat):
-        t0 = time.perf_counter()
-        func(*args)
-        t1 = time.perf_counter()
-        t[i] = t1-t0
-    print(f"{N_repeat} executions of {func.__name__!r} {np.mean(t)*1e3:.3f} +/- {np.std(t)*1e3:.3f} ms per loop (min : {np.min(t)*1e3:.3f} / max : {np.max(t)*1e3:.3f} ms / med: {np.median(t)*1e3:.3f})")
-    return np.mean(t), np.std(t)
-
-
-def timer_repeat_cp(func, *args, N_repeat=1000):
-    t = np.zeros(N_repeat, dtype=np.float32)
-    for i in range(N_repeat):
-        start_gpu = cp.cuda.Event()
-        end_gpu = cp.cuda.Event()
-        start_gpu.record()
-        func(*args)
-        end_gpu.record()
-        end_gpu.synchronize()
-        t[i] = cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-    print(f"{N_repeat} executions of {func.__name__!r} {np.mean(t):.3f} +/- {np.std(t):.3f} ms per loop (min : {np.min(t):.3f} / max : {np.max(t):.3f} ms / med: {np.median(t):.3f})")
-    return np.mean(t), np.std(t)
-
-
-@numba.njit(parallel=True, cache=True, fastmath=True)
+@numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
 def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
     """Calculates the azimuthally averaged radial profile.
 
@@ -70,18 +36,20 @@ def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
         np.ndarray: prof the radially averaged profile
     """
     # Calculate the indices from the image
-    R = np.empty_like(image)
-    max_r = max([np.hypot(center[0], center[1]),
-                 np.hypot(center[0]-image.shape[1], center[1]),
-                 np.hypot(center[0]-image.shape[1],
-                          center[1]-image.shape[0]),
-                 np.hypot(center[0], center[1]-image.shape[0])])
-    r = np.arange(1, int(max_r)+1, 1)
+    max_r = max(
+        [
+            np.hypot(center[0], center[1]),
+            np.hypot(center[0] - image.shape[1], center[1]),
+            np.hypot(center[0] - image.shape[1], center[1] - image.shape[0]),
+            np.hypot(center[0], center[1] - image.shape[0]),
+        ]
+    )
+    r = np.arange(1, int(max_r) + 1, 1)
     prof = np.zeros_like(r, dtype=np.float64)
     prof_counts = np.zeros_like(r, dtype=np.uint64)
     for i in numba.prange(image.shape[0]):
         for j in range(image.shape[1]):
-            dist = round(np.hypot(i-center[1], j-center[0]))
+            dist = round(np.hypot(i - center[1], j - center[0]))
             prof[dist] += image[i, j]
             prof_counts[dist] += 1
     prof /= prof_counts
@@ -89,18 +57,19 @@ def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
 
 
 @cuda.jit(fastmath=True)
-def _az_avg_cp(image: cp.ndarray, prof: cp.ndarray, prof_counts: cp.ndarray,
-               center: tuple):
+def _az_avg_cp(
+    image: cp.ndarray, prof: cp.ndarray, prof_counts: cp.ndarray, center: tuple
+):
     """Kernel for azimuthal average calculation
 
     Args:
         image (cp.ndarray): The image from which to calculate the azimuthal average
-        prof (cp.ndarray): A vector containing the bins 
+        prof (cp.ndarray): A vector containing the bins
         prof_counts (cp.ndarray): A vector of same size as prof to count each bin
     """
     i, j = numba.cuda.grid(2)
     if i < image.shape[0] and j < image.shape[1]:
-        dist = round(math.sqrt((i-center[1])**2+(j-center[0])**2))
+        dist = round(math.sqrt((i - center[1]) ** 2 + (j - center[0]) ** 2))
         prof[dist] += image[i, j]
         prof_counts[dist] += 1
 
@@ -110,37 +79,45 @@ def az_avg_cp(image: cp.ndarray, center: tuple) -> cp.ndarray:
 
     Args:
         image (cp.ndarray): The 2D image
-        center (tuple): The [x,y] pixel coordinates used as the center. Defaults to None,
+        center (tuple): The [x,y] pixel coordinates used as the center.
+        Defaults to None,
         which then uses the center of the image (including fractional pixels).
 
     Returns:
         cp.ndarray: prof the radially averaged profile
     """
     # Calculate the indices from the image
-    R = cp.empty_like(image)
-    max_r = max([cp.hypot(center[0], center[1]),
-                 cp.hypot(center[0]-image.shape[1], center[1]),
-                 cp.hypot(center[0]-image.shape[1],
-                          center[1]-image.shape[0]),
-                 cp.hypot(center[0], center[1]-image.shape[0])])
-    r = cp.arange(1, int(max_r)+1, 1)
+    max_r = max(
+        [
+            cp.hypot(center[0], center[1]),
+            cp.hypot(center[0] - image.shape[1], center[1]),
+            cp.hypot(center[0] - image.shape[1], center[1] - image.shape[0]),
+            cp.hypot(center[0], center[1] - image.shape[0]),
+        ]
+    )
+    r = cp.arange(1, int(max_r) + 1, 1)
     prof = cp.zeros_like(r, dtype=np.float32)
     prof_counts = cp.zeros_like(r, dtype=np.float32)
     tpb = 16
-    bpgx = math.ceil(image.shape[0]/tpb)
-    bpgy = math.ceil(image.shape[1]/tpb)
+    bpgx = math.ceil(image.shape[0] / tpb)
+    bpgy = math.ceil(image.shape[1] / tpb)
     _az_avg_cp[(bpgx, bpgy), (tpb, tpb)](image, prof, prof_counts, center)
     prof /= prof_counts
     return prof
 
 
-@numba.njit(numba.float32[:, :](numba.float32[:, :, :], numba.int64), fastmath=True,
-            cache=True, parallel=True)
+@numba.njit(
+    numba.float32[:, :](numba.float32[:, :, :], numba.int64),
+    fastmath=True,
+    cache=True,
+    parallel=True,
+    boundscheck=False,
+)
 def phase_sum(velo: np.ndarray, r: int = 1) -> np.ndarray:
     """Computes the phase gradient winding with a plaquette radius r
 
     Args:
-        velo (np.ndarray): Velocity array induced from the phase. 
+        velo (np.ndarray): Velocity array induced from the phase.
         velo[0, :, :] is d/dy phi (derivative along rows).
         r (int): Radius of the plaquette circulation computation
     Returns:
@@ -150,24 +127,26 @@ def phase_sum(velo: np.ndarray, r: int = 1) -> np.ndarray:
     for i in numba.prange(velo.shape[1]):
         for j in range(velo.shape[2]):
             # center of the plaquette
-            ii = (i+r//2) % velo.shape[-2]
-            jj = (j+r//2) % velo.shape[-1]
-            for k in range(0, r+1):
-                cont[ii, jj] += velo[0, i, (j+k) % velo.shape[-1]]
-                cont[ii, jj] -= velo[0, (i+r) % velo.shape[-2],
-                                     (j+k) % velo.shape[-1]]
-                cont[ii, jj] += velo[1, (i+k) % velo.shape[-2],
-                                     (j+r) % velo.shape[-1]]
-                cont[ii, jj] -= velo[1, (i+k) % velo.shape[-2], j]
+            ii = (i + r // 2) % velo.shape[-2]
+            jj = (j + r // 2) % velo.shape[-1]
+            for k in range(0, r + 1):
+                cont[ii, jj] += velo[0, i, (j + k) % velo.shape[-1]]
+                cont[ii, jj] -= velo[
+                    0, (i + r) % velo.shape[-2], (j + k) % velo.shape[-1]
+                ]
+                cont[ii, jj] += velo[
+                    1, (i + k) % velo.shape[-2], (j + r) % velo.shape[-1]
+                ]
+                cont[ii, jj] -= velo[1, (i + k) % velo.shape[-2], j]
     return cont
 
 
-@cuda.jit((numba.float32[:, :, :], numba.float32[:, :], numba.int64), fastmath=True)
+@cuda.jit(fastmath=True, boundscheck=False)
 def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int):
     """Computes the phase gradient winding in place with a plaquette radius r
 
     Args:
-        velo (cp.ndarray): Velocity array induced from the phase. 
+        velo (cp.ndarray): Velocity array induced from the phase.
         velo[0, :, :] is d/dy phi (derivative along rows).
         cont (cp.ndarray): output array
         r (int): Radius of the plaquette circulation computation
@@ -177,15 +156,13 @@ def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int):
     i, j = numba.cuda.grid(2)
     if i < velo.shape[1] and j < velo.shape[2]:
         # center of the plaquette
-        ii = (i+r//2) % velo.shape[-2]
-        jj = (j+r//2) % velo.shape[-1]
-        for k in range(0, r+1):
-            cont[ii, jj] += velo[0, i, (j+k) % velo.shape[-1]]
-            cont[ii, jj] -= velo[0, (i+r) % velo.shape[-2],
-                                 (j+k) % velo.shape[-1]]
-            cont[ii, jj] += velo[1, (i+k) % velo.shape[-2],
-                                 (j+r) % velo.shape[-1]]
-            cont[ii, jj] -= velo[1, (i+k) % velo.shape[-2], j]
+        ii = (i + r // 2) % velo.shape[-2]
+        jj = (j + r // 2) % velo.shape[-1]
+        for k in range(0, r + 1):
+            cont[ii, jj] += velo[0, i, (j + k) % velo.shape[-1]]
+            cont[ii, jj] -= velo[0, (i + r) % velo.shape[-2], (j + k) % velo.shape[-1]]
+            cont[ii, jj] += velo[1, (i + k) % velo.shape[-2], (j + r) % velo.shape[-1]]
+            cont[ii, jj] -= velo[1, (i + k) % velo.shape[-2], j]
 
 
 def velocity(phase: np.ndarray, dx: float = 1) -> np.ndarray:
@@ -199,13 +176,11 @@ def velocity(phase: np.ndarray, dx: float = 1) -> np.ndarray:
         np.ndarray: The velocity field [vx, vy]
     """
     # 1D unwrap
-    phase_unwrap = np.empty(
-        (2, phase.shape[0], phase.shape[1]), dtype=np.float32)
+    phase_unwrap = np.empty((2, phase.shape[0], phase.shape[1]), dtype=np.float32)
     phase_unwrap[0, :, :] = np.unwrap(phase, axis=1)
     phase_unwrap[1, :, :] = np.unwrap(phase, axis=0)
     # gradient reconstruction
-    velo = np.empty(
-        (2, phase.shape[0], phase.shape[1]), dtype=np.float32)
+    velo = np.empty((2, phase.shape[0], phase.shape[1]), dtype=np.float32)
     velo[0, :, :] = np.gradient(phase_unwrap[0, :, :], dx, axis=1)
     velo[1, :, :] = np.gradient(phase_unwrap[1, :, :], dx, axis=0)
     return velo
@@ -222,20 +197,18 @@ def velocity_cp(phase: cp.ndarray, dx: float = 1) -> cp.ndarray:
         np.ndarray: The velocity field [vx, vy]
     """
     # 1D unwrap
-    phase_unwrap = cp.empty(
-        (2, phase.shape[0], phase.shape[1]), dtype=np.float32)
+    phase_unwrap = cp.empty((2, phase.shape[0], phase.shape[1]), dtype=np.float32)
     phase_unwrap[0, :, :] = cp.unwrap(phase, axis=1)
     phase_unwrap[1, :, :] = cp.unwrap(phase, axis=0)
     # gradient reconstruction
-    velo = cp.empty(
-        (2, phase.shape[0], phase.shape[1]), dtype=np.float32)
+    velo = cp.empty((2, phase.shape[0], phase.shape[1]), dtype=np.float32)
     velo[0, :, :] = cp.gradient(phase_unwrap[0, :, :], dx, axis=1)
     velo[1, :, :] = cp.gradient(phase_unwrap[1, :, :], dx, axis=0)
     return velo
 
 
 def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
-    """Returns the velocity from the phase using an fft to compute 
+    """Returns the velocity from the phase using an fft to compute
     the gradient
 
     Args:
@@ -246,8 +219,7 @@ def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
         np.ndarray: The velocity field [vx, vy]
     """
     # 1D unwrap
-    phase_unwrap = np.empty(
-        (2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    phase_unwrap = np.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
     phase_unwrap[0, :, :] = np.unwrap(phase, axis=-1)
     phase_unwrap[1, :, :] = np.unwrap(phase, axis=-2)
     # prepare K matrix
@@ -255,15 +227,14 @@ def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
     ky = np.fft.fftfreq(phase.shape[-2], dx)
     Kx, Ky = np.meshgrid(kx, ky)
     # gradient reconstruction
-    velo = np.empty(
-        (2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    velo[0, :, :] = np.fft.ifft2(Kx*np.fft.fft2(phase_unwrap[0, :, :]))
-    velo[1, :, :] = np.fft.ifft2(Ky*np.fft.fft2(phase_unwrap[1, :, :]))
+    velo = np.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    velo[0, :, :] = np.fft.ifft2(Kx * np.fft.fft2(phase_unwrap[0, :, :]))
+    velo[1, :, :] = np.fft.ifft2(Ky * np.fft.fft2(phase_unwrap[1, :, :]))
     return velo
 
 
 def velocity_fft_cp(phase: cp.ndarray, dx: float = 1) -> cp.ndarray:
-    """Returns the velocity from the phase using an fft to compute 
+    """Returns the velocity from the phase using an fft to compute
     the gradient
 
     Args:
@@ -274,19 +245,18 @@ def velocity_fft_cp(phase: cp.ndarray, dx: float = 1) -> cp.ndarray:
         cp.ndarray: The velocity field [vx, vy]
     """
     # 1D unwrap
-    phase_unwrap = cp.empty(
-        (2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    phase_unwrap = cp.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
     phase_unwrap[0, :, :] = cp.unwrap(phase, axis=-1)
     phase_unwrap[1, :, :] = cp.unwrap(phase, axis=-2)
     # prepare K matrix
-    kx = 2*np.pi*cp.fft.fftfreq(phase.shape[-1], dx)
-    ky = 2*np.pi*cp.fft.fftfreq(phase.shape[-2], dx)
+    kx = 2 * np.pi * cp.fft.fftfreq(phase.shape[-1], dx)
+    ky = 2 * np.pi * cp.fft.fftfreq(phase.shape[-2], dx)
     K = cp.array(cp.meshgrid(kx, ky))
     # gradient reconstruction
-    velo = cp.empty(
-        (2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    velo = cp.fft.irfft2(1j*K[:, :, 0:K.shape[-1]//2+1]
-                         * cp.fft.rfft2(phase_unwrap))
+    velo = cp.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    velo = cp.fft.irfft2(
+        1j * K[:, :, 0 : K.shape[-1] // 2 + 1] * cp.fft.rfft2(phase_unwrap)
+    )
     return velo
 
 
@@ -310,18 +280,18 @@ def helmholtz_decomp(field: np.ndarray, plot=False, dx: float = 1) -> tuple:
         print("No FFT wisdom found, starting over ...")
     sy, sx = field.shape
     # meshgrid in k space
-    kx = 2*np.pi*np.fft.rfftfreq(sx, d=dx)
-    ky = 2*np.pi*np.fft.fftfreq(sy, d=dx)
+    kx = 2 * np.pi * np.fft.rfftfreq(sx, d=dx)
+    ky = 2 * np.pi * np.fft.fftfreq(sy, d=dx)
     K = np.array(np.meshgrid(kx, ky))
     phase = np.angle(field)
-    velo = np.abs(field)*velocity(phase, dx)
+    velo = np.abs(field) * velocity(phase, dx)
 
     v_tot = np.hypot(velo[0], velo[1])
     V_k = pyfftw.interfaces.numpy_fft.rfft2(velo)
 
     # Helmholtz decomposition fot the compressible part
-    V_comp = -1j*np.sum(V_k*K, axis=0)/((np.sum(K**2, axis=0))+1e-15)
-    v_comp = pyfftw.interfaces.numpy_fft.irfft2(1j*V_comp*K)
+    V_comp = -1j * np.sum(V_k * K, axis=0) / ((np.sum(K**2, axis=0)) + 1e-15)
+    v_comp = pyfftw.interfaces.numpy_fft.irfft2(1j * V_comp * K)
 
     # Helmholtz decomposition fot the incompressible part
     v_inc = velo - v_comp
@@ -334,38 +304,40 @@ def helmholtz_decomp(field: np.ndarray, plot=False, dx: float = 1) -> tuple:
         YY, XX = np.indices(flow.shape)
         fig, ax = plt.subplots(2, 2, figsize=[12, 9])
         im0 = ax[0, 0].imshow(v_tot)
-        ax[0, 0].set_title(r'$|v^{tot}|$')
-        ax[0, 0].set_xlabel('x')
-        ax[0, 0].set_ylabel('y')
+        ax[0, 0].set_title(r"$|v^{tot}|$")
+        ax[0, 0].set_xlabel("x")
+        ax[0, 0].set_ylabel("y")
         fig.colorbar(im0, ax=ax[0, 0])
 
         im1 = ax[0, 1].imshow(flow)
-        ax[0, 1].set_title(r'$|v^{inc}|$')
-        ax[0, 1].set_xlabel('x')
-        ax[0, 1].set_ylabel('y')
+        ax[0, 1].set_title(r"$|v^{inc}|$")
+        ax[0, 1].set_xlabel("x")
+        ax[0, 1].set_ylabel("y")
         fig.colorbar(im1, ax=ax[0, 1])
 
         im2 = ax[1, 0].imshow(np.hypot(v_comp[0], v_comp[1]))
-        ax[1, 0].set_title(r'$|v^{comp}|$')
-        ax[1, 0].set_xlabel('x')
-        ax[1, 0].set_ylabel('y')
+        ax[1, 0].set_title(r"$|v^{comp}|$")
+        ax[1, 0].set_xlabel("x")
+        ax[1, 0].set_ylabel("y")
         fig.colorbar(im2, ax=ax[1, 0])
 
         # flows are calculated by streamplot
-        im3 = ax[1, 1].imshow(flow, cmap='viridis')
-        ax[1, 1].streamplot(XX, YY, v_inc[0], v_inc[1],
-                            density=5, color='white', linewidth=1)
-        ax[1, 1].set_title(r'$v^{inc}$')
-        ax[1, 1].set_xlabel('x')
-        ax[1, 1].set_ylabel('y')
-        fig.colorbar(im3, ax=ax[1, 1], label=r'$|v^{inc}|$')
+        im3 = ax[1, 1].imshow(flow, cmap="viridis")
+        ax[1, 1].streamplot(
+            XX, YY, v_inc[0], v_inc[1], density=5, color="white", linewidth=1
+        )
+        ax[1, 1].set_title(r"$v^{inc}$")
+        ax[1, 1].set_xlabel("x")
+        ax[1, 1].set_ylabel("y")
+        fig.colorbar(im3, ax=ax[1, 1], label=r"$|v^{inc}|$")
         plt.show()
 
     return velo, v_inc, v_comp
 
 
-def helmholtz_decomp_cp(field: np.ndarray, plot: bool = False, dx: float = 1,
-                        regularize: bool = True) -> tuple:
+def helmholtz_decomp_cp(
+    field: np.ndarray, plot: bool = False, dx: float = 1, regularize: bool = True
+) -> tuple:
     """Decomposes a phase picture into compressible and incompressible velocities
 
     Args:
@@ -379,18 +351,18 @@ def helmholtz_decomp_cp(field: np.ndarray, plot: bool = False, dx: float = 1,
     """
     sy, sx = field.shape
     # meshgrid in k space
-    kx = 2*np.pi*cp.fft.rfftfreq(sx, d=dx)
-    ky = 2*np.pi*cp.fft.fftfreq(sy, d=dx)
+    kx = 2 * np.pi * cp.fft.rfftfreq(sx, d=dx)
+    ky = 2 * np.pi * cp.fft.fftfreq(sy, d=dx)
     K = cp.array(cp.meshgrid(kx, ky))
     if regularize:
-        velo = cp.abs(field)*velocity_cp(cp.angle(field))
+        velo = cp.abs(field) * velocity_cp(cp.angle(field))
     else:
         velo = velocity_cp(cp.angle(field))
     v_tot = cp.hypot(velo[0], velo[1])
     V_k = cp.fft.rfft2(velo)
     # Helmohltz decomposition fot the compressible part
-    V_comp = -1j*cp.sum(V_k*K, axis=0)/((cp.sum(K**2, axis=0))+1e-15)
-    v_comp = cp.fft.irfft2(1j*V_comp*K)
+    V_comp = -1j * cp.sum(V_k * K, axis=0) / ((cp.sum(K**2, axis=0)) + 1e-15)
+    v_comp = cp.fft.irfft2(1j * V_comp * K)
     # Helmohltz decomposition fot the incompressible part
     v_inc = velo - v_comp
     if plot:
@@ -399,39 +371,53 @@ def helmholtz_decomp_cp(field: np.ndarray, plot: bool = False, dx: float = 1,
         YY, XX = np.indices(flow_comp.shape)
         fig, ax = plt.subplots(2, 2, figsize=[12, 9])
         im0 = ax[0, 0].imshow(v_tot.get())
-        ax[0, 0].set_title(r'$|v^{tot}|$')
-        ax[0, 0].set_xlabel('x')
-        ax[0, 0].set_ylabel('y')
+        ax[0, 0].set_title(r"$|v^{tot}|$")
+        ax[0, 0].set_xlabel("x")
+        ax[0, 0].set_ylabel("y")
         fig.colorbar(im0, ax=ax[0, 0])
 
         im1 = ax[0, 1].imshow(flow_inc.get())
-        ax[0, 1].set_title(r'$|v^{inc}|$')
-        ax[0, 1].set_xlabel('x')
-        ax[0, 1].set_ylabel('y')
+        ax[0, 1].set_title(r"$|v^{inc}|$")
+        ax[0, 1].set_xlabel("x")
+        ax[0, 1].set_ylabel("y")
         fig.colorbar(im1, ax=ax[0, 1])
 
         im2 = ax[1, 0].imshow(flow_comp.get())
-        ax[1, 0].streamplot(XX, YY, v_comp[0].get(), v_comp[1].get(),
-                            density=2.5, color='white', linewidth=1)
-        ax[1, 0].set_title(r'$|v^{comp}|$')
-        ax[1, 0].set_xlabel('x')
-        ax[1, 0].set_ylabel('y')
+        ax[1, 0].streamplot(
+            XX,
+            YY,
+            v_comp[0].get(),
+            v_comp[1].get(),
+            density=2.5,
+            color="white",
+            linewidth=1,
+        )
+        ax[1, 0].set_title(r"$|v^{comp}|$")
+        ax[1, 0].set_xlabel("x")
+        ax[1, 0].set_ylabel("y")
         fig.colorbar(im2, ax=ax[1, 0])
 
         # flows are calculated by streamplot
-        im3 = ax[1, 1].imshow(flow_inc.get(), cmap='viridis')
-        ax[1, 1].streamplot(XX, YY, v_inc[0].get(), v_inc[1].get(),
-                            density=2.5, color='white', linewidth=1)
-        ax[1, 1].set_title(r'$v^{inc}$')
-        ax[1, 1].set_xlabel('x')
-        ax[1, 1].set_ylabel('y')
-        fig.colorbar(im3, ax=ax[1, 1], label=r'$|v^{inc}|$')
+        im3 = ax[1, 1].imshow(flow_inc.get(), cmap="viridis")
+        ax[1, 1].streamplot(
+            XX,
+            YY,
+            v_inc[0].get(),
+            v_inc[1].get(),
+            density=2.5,
+            color="white",
+            linewidth=1,
+        )
+        ax[1, 1].set_title(r"$v^{inc}$")
+        ax[1, 1].set_xlabel("x")
+        ax[1, 1].set_ylabel("y")
+        fig.colorbar(im3, ax=ax[1, 1], label=r"$|v^{inc}|$")
         plt.show()
     return velo, v_inc, v_comp
 
 
 def energy(ucomp: np.ndarray, uinc: np.ndarray) -> tuple:
-    """Computes the total energy contained in the given compressible 
+    """Computes the total energy contained in the given compressible
     and incompressible velocities
 
     Args:
@@ -442,11 +428,11 @@ def energy(ucomp: np.ndarray, uinc: np.ndarray) -> tuple:
         (Ucc, Uii): The total compressible and incompressible energies
     """
     # compressible
-    Uc = np.abs(pyfftw.interfaces.numpy_fft.rfft2(ucomp))**2
+    Uc = np.abs(pyfftw.interfaces.numpy_fft.rfft2(ucomp)) ** 2
     Ucc = np.sum(Uc)
 
     # incompressible
-    Ui = np.abs(pyfftw.interfaces.numpy_fft.rfft2(uinc))**2
+    Ui = np.abs(pyfftw.interfaces.numpy_fft.rfft2(uinc)) ** 2
     Uii = np.sum(Ui)
 
     return Ucc, Uii
@@ -469,19 +455,19 @@ def energy_spectrum(ucomp: np.ndarray, uinc: np.ndarray) -> np.ndarray:
     Ux_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[0])))
     Uy_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[1])))
     Uc = Ux_c**2 + Uy_c**2
-    Ucc = az_avg(Uc, center=(Uc.shape[1]//2, Uc.shape[0]//2))
+    Ucc = az_avg(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
     # incompressible
     Ux_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[0])))
     Uy_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[1])))
     Ui = Ux_i**2 + Uy_i**2
-    Uii = az_avg(Ui, center=(Ui.shape[1]//2, Ui.shape[0]//2))
+    Uii = az_avg(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
 
     return Ucc, Uii
 
 
 def energy_cp(ucomp: cp.ndarray, uinc: cp.ndarray) -> tuple:
-    """Computes the total energy contained in the given compressible 
+    """Computes the total energy contained in the given compressible
     and incompressible velocities
 
     Args:
@@ -491,12 +477,12 @@ def energy_cp(ucomp: cp.ndarray, uinc: cp.ndarray) -> tuple:
     Returns:
         (Ucc, Uii): The total compressible and incompressible energies
     """
-     # compressible
-    Uc = cp.abs(cp.fft.rfft2(ucomp))**2
+    # compressible
+    Uc = cp.abs(cp.fft.rfft2(ucomp)) ** 2
     Ucc = cp.sum(Uc)
 
     # incompressible
-    Ui = cp.abs(cp.fft.rfft2(uinc))**2
+    Ui = cp.abs(cp.fft.rfft2(uinc)) ** 2
     Uii = cp.sum(Ui)
 
     return Ucc, Uii
@@ -518,13 +504,14 @@ def energy_spectrum_cp(ucomp: cp.ndarray, uinc: cp.ndarray) -> cp.ndarray:
     Ux_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[0])))
     Uy_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[1])))
     Uc = Ux_c**2 + Uy_c**2
-    Ucc = az_avg_cp(Uc, center=(Uc.shape[1]//2, Uc.shape[0]//2))
+    Ucc = az_avg_cp(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
     # incompressible
     Ux_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[0])))
     Uy_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[1])))
     Ui = Ux_i**2 + Uy_i**2
-    Uii = az_avg_cp(Ui, center=(Ui.shape[1]//2, Ui.shape[0]//2))
+    Uii = az_avg_cp(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
+    return Ucc, Uii
 
 
 def vortex_detection(phase: np.ndarray, plot: bool = False, r: int = 1) -> np.ndarray:
@@ -540,110 +527,113 @@ def vortex_detection(phase: np.ndarray, plot: bool = False, r: int = 1) -> np.nd
     velo = velocity(phase)
     if r == 1:
         windings = phase_sum(velo, r)
-        cond_plus = windings > 2*np.pi
-        cond_minus = windings < -2*np.pi
+        cond_plus = windings > 2 * np.pi
+        cond_minus = windings < -2 * np.pi
     else:
-        windings = np.zeros(
-            (r, phase.shape[0], phase.shape[1]), dtype=np.float32)
+        windings = np.zeros((r, phase.shape[0], phase.shape[1]), dtype=np.float32)
         for ir in range(r):
-            windings[ir, :, :] = phase_sum(velo, ir+1)
-        cond_plus = windings > 2*np.pi
+            windings[ir, :, :] = phase_sum(velo, ir + 1)
+        cond_plus = windings > 2 * np.pi
         cond_plus = cond_plus.all(axis=0)
-        cond_minus = windings < -2*np.pi
+        cond_minus = windings < -2 * np.pi
         cond_minus = cond_minus.all(axis=0)
     plus_y, plus_x = np.where(cond_plus)
     minus_y, minus_x = np.where(cond_minus)
-    vortices = np.zeros((len(plus_x)+len(minus_x), 3), dtype=np.float32)
-    vortices[0:len(plus_x), 0] = plus_x
-    vortices[0:len(plus_x), 1] = plus_y
-    vortices[0:len(plus_x), 2] = 1
-    vortices[len(plus_x):, 0] = minus_x
-    vortices[len(plus_x):, 1] = minus_y
-    vortices[len(plus_x):, 2] = -1
+    vortices = np.zeros((len(plus_x) + len(minus_x), 3), dtype=np.float32)
+    vortices[0 : len(plus_x), 0] = plus_x
+    vortices[0 : len(plus_x), 1] = plus_y
+    vortices[0 : len(plus_x), 2] = 1
+    vortices[len(plus_x) :, 0] = minus_x
+    vortices[len(plus_x) :, 1] = minus_y
+    vortices[len(plus_x) :, 2] = -1
     if plot:
         if windings.ndim == 3:
             windings = windings.mean(axis=0)
         fig, ax = plt.subplots(1, 2, figsize=[8, 4])
-        im0 = ax[0].imshow(phase, cmap='twilight_shifted')
-        im1 = ax[1].imshow(windings, cmap='seismic',
-                           norm=colors.CenteredNorm(vcenter=0))
-        ax[0].scatter(vortices[:, 0], vortices[:, 1],
-                      c=vortices[:, 2], cmap='bwr')
+        im0 = ax[0].imshow(phase, cmap="twilight_shifted")
+        im1 = ax[1].imshow(
+            windings, cmap="seismic", norm=colors.CenteredNorm(vcenter=0)
+        )
+        ax[0].scatter(vortices[:, 0], vortices[:, 1], c=vortices[:, 2], cmap="bwr")
         fig.colorbar(im0, ax=ax[0], shrink=0.5, label="Vorticity")
         fig.colorbar(im1, ax=ax[1], shrink=0.5, label="Winding")
         plt.show()
     return vortices
 
 
-def vortex_detection_cp(phase: cp.ndarray, plot: bool = False,
-                        r: int = 1) -> cp.ndarray:
+def vortex_detection_cp(
+    phase: cp.ndarray, plot: bool = False, r: int = 1
+) -> cp.ndarray:
     """Detects the vortex positions using circulation calculation
 
     Args:
         phase (np.ndarray): Phase field.
         plot (bool, optional): Whether to plot the result or not. Defaults to True.
-        r (int or list, optionnal): Radius of the plaquette. Defaults to 1. 
+        r (int or list, optionnal): Radius of the plaquette. Defaults to 1.
         If the radius is a list, will compute the winding for each radius and then
-        compare the results for each radius by taking the logical AND between the 
+        compare the results for each radius by taking the logical AND between the
         vortices found at each radius.
 
     Returns:
         np.ndarray: A list of the vortices position and charge
     """
     velo = velocity_cp(phase)
-    if type(r) is int:
+    if isinstance(r, int):
         if r > 1:
-            windings = cp.zeros(
-                (r, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    elif type(r) is list:
-         windings = cp.zeros(
-            (len(r), phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+            windings = cp.zeros((r, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+    elif isinstance(r, list):
+        windings = cp.zeros(
+            (len(r), phase.shape[-2], phase.shape[-1]), dtype=np.float32
+        )
     else:
         windings = cp.zeros_like(velo[0], dtype=np.float32)
     tpb = 32
-    bpgx = math.ceil(phase.shape[0]/tpb)
-    bpgy = math.ceil(phase.shape[1]/tpb)
-    if type(r) is int:
-        if r>1:
+    bpgx = math.ceil(phase.shape[0] / tpb)
+    bpgy = math.ceil(phase.shape[1] / tpb)
+    if isinstance(r, int):
+        if r > 1:
             for ir in range(r):
-                phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](
-                    velo, windings[ir, :, :], ir+1)
-            cond_plus = windings > 2*np.pi
+                phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](velo, windings[ir, :, :], ir + 1)
+            cond_plus = windings > 2 * np.pi
             cond_plus = cond_plus.all(axis=0)
-            cond_minus = windings < -2*np.pi
+            cond_minus = windings < -2 * np.pi
             cond_minus = cond_minus.all(axis=0)
-    
-    elif type(r) is list:
+
+    elif isinstance(r, list):
         for ir, rr in enumerate(r):
-            phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](
-                velo, windings[ir, :, :], rr)
-        cond_plus = windings > 2*np.pi
+            phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](velo, windings[ir, :, :], rr)
+        cond_plus = windings > 2 * np.pi
         cond_plus = cond_plus.all(axis=0)
-        cond_minus = windings < -2*np.pi
+        cond_minus = windings < -2 * np.pi
         cond_minus = cond_minus.all(axis=0)
 
     else:
         phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](velo, windings, r)
-        cond_plus = windings > 2*np.pi
-        cond_minus = windings < -2*np.pi
+        cond_plus = windings > 2 * np.pi
+        cond_minus = windings < -2 * np.pi
     plus_y, plus_x = cp.where(cond_plus)
     minus_y, minus_x = cp.where(cond_minus)
-    vortices = cp.zeros((len(plus_x)+len(minus_x), 3), dtype=np.float32)
-    vortices[0:len(plus_x), 0] = plus_x
-    vortices[0:len(plus_x), 1] = plus_y
-    vortices[0:len(plus_x), 2] = 1
-    vortices[len(plus_x):, 0] = minus_x
-    vortices[len(plus_x):, 1] = minus_y
-    vortices[len(plus_x):, 2] = -1
+    vortices = cp.zeros((len(plus_x) + len(minus_x), 3), dtype=np.float32)
+    vortices[0 : len(plus_x), 0] = plus_x
+    vortices[0 : len(plus_x), 1] = plus_y
+    vortices[0 : len(plus_x), 2] = 1
+    vortices[len(plus_x) :, 0] = minus_x
+    vortices[len(plus_x) :, 1] = minus_y
+    vortices[len(plus_x) :, 2] = -1
     if plot:
         if windings.ndim == 3:
             windings = windings.mean(axis=0)
         fig, ax = plt.subplots(1, 2, figsize=[8, 4])
-        im0 = ax[0].imshow(phase.get(), cmap='twilight_shifted')
-        im1 = ax[1].imshow(windings.get(), cmap='seismic',
-                           norm=colors.CenteredNorm(vcenter=0))
-        ax[0].scatter(vortices[:, 0].get(), vortices[:, 1].get(),
-                      c=vortices[:, 2].get(), cmap='bwr')
+        im0 = ax[0].imshow(phase.get(), cmap="twilight_shifted")
+        im1 = ax[1].imshow(
+            windings.get(), cmap="seismic", norm=colors.CenteredNorm(vcenter=0)
+        )
+        ax[0].scatter(
+            vortices[:, 0].get(),
+            vortices[:, 1].get(),
+            c=vortices[:, 2].get(),
+            cmap="bwr",
+        )
         fig.colorbar(im0, ax=ax[0], shrink=0.5, label="Vorticity")
         fig.colorbar(im1, ax=ax[1], shrink=0.5, label="Winding")
         plt.show()
@@ -670,8 +660,9 @@ def mutual_nearest_neighbors(nn) -> np.ndarray:
     return mutu
 
 
-def build_pairs(vortices: np.ndarray, nn: np.ndarray, mutu: np.ndarray,
-                queue: np.ndarray):
+def build_pairs(
+    vortices: np.ndarray, nn: np.ndarray, mutu: np.ndarray, queue: np.ndarray
+):
     """Builds the dipoles and the pairs of same sign
 
     Args:
@@ -683,7 +674,7 @@ def build_pairs(vortices: np.ndarray, nn: np.ndarray, mutu: np.ndarray,
         dipoles, pairs, queue : np.ndarray dipoles, clusters and updated queue
     """
     closest = nn[mutu]
-    ll = vortices[:, 2]*vortices[nn, 2]
+    ll = vortices[:, 2] * vortices[nn, 2]
     dipoles_ = mutu[ll[mutu] == -1]
     dipoles = np.empty((len(dipoles_), 2), dtype=np.int64)
     dipoles[:, 0] = dipoles_
@@ -703,11 +694,16 @@ def build_pairs(vortices: np.ndarray, nn: np.ndarray, mutu: np.ndarray,
     return dipoles, pairs, queue
 
 
-@numba.njit(numba.types.UniTuple(numba.int64[:], 2)(
-    numba.int64[:, :], numba.float64[:], numba.float64[:, :]),
-    cache=True, parallel=True)
-def edges_to_connect(neighbors: np.ndarray, dists_opp: np.ndarray,
-                     dists: np.ndarray) -> tuple:
+@numba.njit(
+    numba.types.UniTuple(numba.int64[:], 2)(
+        numba.int64[:, :], numba.float64[:], numba.float64[:, :]
+    ),
+    cache=True,
+    parallel=True,
+)
+def edges_to_connect(
+    neighbors: np.ndarray, dists_opp: np.ndarray, dists: np.ndarray
+) -> tuple:
     """Generates arrays of edges to add applying rule 2 based on distance to closest opposite
     and vortex to same sign neighbor distance
 
@@ -730,9 +726,14 @@ def edges_to_connect(neighbors: np.ndarray, dists_opp: np.ndarray,
     return q_to_add, nei_to_add
 
 
-def grow_clusters(vortices: np.ndarray, plus: np.ndarray, minus: np.ndarray,
-                  tree_plus: spatial.KDTree, tree_minus: spatial.KDTree,
-                  cluster_graph: nx.Graph):
+def grow_clusters(
+    vortices: np.ndarray,
+    plus: np.ndarray,
+    minus: np.ndarray,
+    tree_plus: spatial.KDTree,
+    tree_minus: spatial.KDTree,
+    cluster_graph: nx.Graph,
+):
     """Grows the clusters in the graph by applying rule 2 on the remaining vortices (i.e without dipoles)
 
     Args:
@@ -745,23 +746,30 @@ def grow_clusters(vortices: np.ndarray, plus: np.ndarray, minus: np.ndarray,
     """
     # find kth same sign neighbors
     dists_plus, neighbors_plus = tree_plus.query(
-        vortices[plus, 0:2], k=len(plus)//2, workers=-1)
+        vortices[plus, 0:2], k=len(plus) // 2, workers=-1
+    )
     dists_minus, neighbors_minus = tree_minus.query(
-        vortices[minus, 0:2], k=len(minus)//2, workers=-1)
+        vortices[minus, 0:2], k=len(minus) // 2, workers=-1
+    )
     # find closest opposite neighbors
-    dists_plus_opp, plus_opp = tree_minus.query(
-        vortices[plus, 0:2], k=1, workers=-1)
-    dists_minus_opp, minus_opp = tree_plus.query(
-        vortices[minus, 0:2], k=1, workers=-1)
+    dists_plus_opp, plus_opp = tree_minus.query(vortices[plus, 0:2], k=1, workers=-1)
+    dists_minus_opp, minus_opp = tree_plus.query(vortices[minus, 0:2], k=1, workers=-1)
     # dist to closest opposite both greater than dist between q and neighbor
     plus_to_add_q, plus_to_add_nei = edges_to_connect(
-        neighbors_plus, dists_plus_opp, dists_plus)
+        neighbors_plus, dists_plus_opp, dists_plus
+    )
     minus_to_add_q, minus_to_add_nei = edges_to_connect(
-        neighbors_minus, dists_minus_opp, dists_minus)
+        neighbors_minus, dists_minus_opp, dists_minus
+    )
     cluster_graph.add_edges_from(
-        zip(plus[plus_to_add_q], plus[neighbors_plus[plus_to_add_q, plus_to_add_nei]]))
+        zip(plus[plus_to_add_q], plus[neighbors_plus[plus_to_add_q, plus_to_add_nei]])
+    )
     cluster_graph.add_edges_from(
-        zip(minus[minus_to_add_q], minus[neighbors_minus[minus_to_add_q, minus_to_add_nei]]))
+        zip(
+            minus[minus_to_add_q],
+            minus[neighbors_minus[minus_to_add_q, minus_to_add_nei]],
+        )
+    )
 
 
 def cluster_vortices(vortices: np.ndarray) -> list:
@@ -776,21 +784,20 @@ def cluster_vortices(vortices: np.ndarray) -> list:
     # store vortices in tree
     tree = spatial.KDTree(vortices[:, 0:2])
     # find nearest neighbors
-    nn = tree.query(
-        vortices[:, 0:2], k=2, workers=-1)[1]
+    nn = tree.query(vortices[:, 0:2], k=2, workers=-1)[1]
     # nn[i] is vortex i nearest neighbor
     nn = nn[:, 1]
     mutu = mutual_nearest_neighbors(nn)
     mutu = queue[mutu]
     # RULE 1
-    dipoles, pairs, queue = build_pairs(
-        vortices, nn, mutu, queue)
-    assert 2*len(dipoles) + 2*pairs.shape[0] + \
-        len(queue) == vortices.shape[0], "PROBLEM count"
+    dipoles, pairs, queue = build_pairs(vortices, nn, mutu, queue)
+    assert (
+        2 * len(dipoles) + 2 * pairs.shape[0] + len(queue) == vortices.shape[0]
+    ), "PROBLEM count"
     # extract dipole free list
     without_dipoles = np.empty(len(queue) + len(pairs), dtype=np.int64)
-    without_dipoles[0:len(queue)] = queue
-    without_dipoles[len(queue):len(queue)+len(pairs)] = pairs[:, 0]
+    without_dipoles[0 : len(queue)] = queue
+    without_dipoles[len(queue) : len(queue) + len(pairs)] = pairs[:, 0]
     # sort plus and minus
     plus = without_dipoles[vortices[without_dipoles, 2] == 1]
     minus = without_dipoles[vortices[without_dipoles, 2] == -1]
@@ -823,7 +830,7 @@ def cluster_histogram(clusters, plot: bool = True) -> np.ndarray:
     hist, bin_edges = np.histogram(lengths, bins=np.max(lengths))
     if plot:
         plt.hist(lengths, bins=np.max(lengths))
-        plt.yscale('log')
+        plt.yscale("log")
         plt.xlabel("Size of the cluster")
         plt.ylabel("Number of clusters")
         plt.xlim(1, np.max(lengths))
@@ -845,13 +852,14 @@ def cluster_barycenters(vortices: np.ndarray, clusters: np.ndarray) -> np.ndarra
     barys = np.zeros((len(clusters), 2), dtype=np.float32)
     for k, c in enumerate(clusters):
         length = len(c)
-        barys[k, 0] = np.sum(vortices[c, 0])/length
-        barys[k, 1] = np.sum(vortices[c, 1])/length
+        barys[k, 0] = np.sum(vortices[c, 0]) / length
+        barys[k, 1] = np.sum(vortices[c, 1]) / length
     return barys
 
 
-def cluster_radii(vortices: np.ndarray, clusters: np.ndarray,
-                  barys: np.ndarray) -> np.ndarray:
+def cluster_radii(
+    vortices: np.ndarray, clusters: np.ndarray, barys: np.ndarray
+) -> np.ndarray:
     """Computes the cluster radius
 
     Args:
@@ -865,13 +873,16 @@ def cluster_radii(vortices: np.ndarray, clusters: np.ndarray,
     radii = np.zeros(barys.shape[0], dtype=np.float32)
     for k, c in enumerate(clusters):
         length = len(c)
-        radii[k] = np.sum(np.hypot(vortices[c, 0]-barys[k, 0],
-                          vortices[c, 1]-barys[k, 1]))/length
+        radii[k] = (
+            np.sum(np.hypot(vortices[c, 0] - barys[k, 0], vortices[c, 1] - barys[k, 1]))
+            / length
+        )
     return radii
 
 
-@numba.njit(numba.float32(numba.float32[:, :], numba.int64[:, :]),
-            parallel=True, cache=True)
+@numba.njit(
+    numba.float32(numba.float32[:, :], numba.int64[:, :]), parallel=True, cache=True
+)
 def _ck(vortices: np.ndarray, neighbors: np.ndarray) -> float:
     """Correlation kernel
 
@@ -887,7 +898,7 @@ def _ck(vortices: np.ndarray, neighbors: np.ndarray) -> float:
     c = 0
     for i in numba.prange(N):
         for j in range(k):
-            c += abs(vortices[i, 2]*vortices[j, 2])/(2*k*N)
+            c += abs(vortices[i, 2] * vortices[j, 2]) / (2 * k * N)
     return c
 
 
@@ -903,14 +914,14 @@ def ck(vortices: np.ndarray, k: int) -> float:
         float: C_k the correlation coefficient
     """
     tree = spatial.KDTree(vortices[:, 0:2])
-    neighbors = tree.query(vortices[:, 0:2], k=k+1)[1]
+    neighbors = tree.query(vortices[:, 0:2], k=k + 1)[1]
     # remove 0th neighbor
     neighbors = neighbors[:, 1:]
     c = _ck(vortices, neighbors)
     return c
 
 
-@cuda.jit(cache=True, fastmath=True)
+@cuda.jit(cache=True, fastmath=True, boundscheck=False)
 def _distance_matrix(dist: cp.ndarray, x: cp.ndarray, y: cp.ndarray):
     """Compute distance matrix using CUDA
 
@@ -921,12 +932,11 @@ def _distance_matrix(dist: cp.ndarray, x: cp.ndarray, y: cp.ndarray):
     i, j = numba.cuda.grid(2)
     if i < x.shape[0] and j < y.shape[0]:
         if j >= i:
-            dist[i, j] += math.sqrt((x[i, 0] - y[j, 0])
-                                    ** 2 + (x[i, 1] - y[j, 1])**2)
+            dist[i, j] += math.sqrt((x[i, 0] - y[j, 0]) ** 2 + (x[i, 1] - y[j, 1]) ** 2)
             dist[j, i] = dist[i, j]
 
 
-@cuda.jit(cache=True)
+@cuda.jit(cache=True, boundscheck=False)
 def _build_condition(condition: cp.ndarray, dist: cp.ndarray, bins: cp.ndarray):
     """Constructs the array that represents the vortices pair i, j to consider
     in the bin k.
@@ -934,20 +944,21 @@ def _build_condition(condition: cp.ndarray, dist: cp.ndarray, bins: cp.ndarray):
     Args:
         condition (cp.ndarray): Boolean array of shape (k, i, j) where k is an index
         running in the number of bins, i and j in the number of vortices.
-        dist (cp.ndarray): Distance matrix where D_ij is the distance between the 
+        dist (cp.ndarray): Distance matrix where D_ij is the distance between the
         vortex i and j.
-        bins (cp.ndarray): The disk shells of radius r and width d within which we 
+        bins (cp.ndarray): The disk shells of radius r and width d within which we
         compute the correlations between a vortex and all vortices lying in a bin.
     """
     i, j, k = numba.cuda.grid(3)
     if i < condition.shape[0] and j < condition.shape[1] and k < len(bins):
-        condition[k-1, i, j] = dist[i, j] > bins[k-1]
-        condition[k-1, i, j] &= dist[i, j] < bins[k]
+        condition[k - 1, i, j] = dist[i, j] > bins[k - 1]
+        condition[k - 1, i, j] &= dist[i, j] < bins[k]
 
 
-@cuda.jit(cache=True, fastmath=True)
-def _correlate(corr: cp.ndarray, vortices: cp.ndarray, bins: cp.ndarray,
-               condition: cp.ndarray):
+@cuda.jit(cache=True, fastmath=True, boundscheck=False)
+def _correlate(
+    corr: cp.ndarray, vortices: cp.ndarray, bins: cp.ndarray, condition: cp.ndarray
+):
     """Compute the actual correlation function
 
     Args:
@@ -957,49 +968,50 @@ def _correlate(corr: cp.ndarray, vortices: cp.ndarray, bins: cp.ndarray,
         calculation
         condition (cp.ndarray): Which vortices to consider
     """
-    d = bins[1]-bins[0]
+    d = bins[1] - bins[0]
     i, j, k = numba.cuda.grid(3)
     if i < condition.shape[0] and j < condition.shape[1] and k < len(bins):
-        if condition[k-1, i, j]:
-            r = abs(bins[k]-d/2)
-            corr[k-1] += 1/(2*np.pi*r*d*vortices.shape[0]) * \
-                vortices[i, 2]*vortices[j, 2]
+        if condition[k - 1, i, j]:
+            r = abs(bins[k] - d / 2)
+            corr[k - 1] += (
+                1
+                / (2 * np.pi * r * d * vortices.shape[0])
+                * vortices[i, 2]
+                * vortices[j, 2]
+            )
 
 
 def pair_correlations_cp(vortices: cp.ndarray, bins: cp.ndarray) -> cp.ndarray:
     """Computes the pair correlation function for a given vortex array.
-    See PHYSICAL REVIEW E 95, 052144 (2017) eq.12 
+    See PHYSICAL REVIEW E 95, 052144 (2017) eq.12
 
     Args:
         vortices (np.ndarray): Vortices array
-        bins (np.ndarray): bins of distance in which to compute the 
+        bins (np.ndarray): bins of distance in which to compute the
         correlation function
 
     Returns:
         np.ndarray: The correlation function of length len(bins)
     """
-    corr = cp.zeros(len(bins)-1)
+    corr = cp.zeros(len(bins) - 1)
     # compute distance matrix of vortices
-    dist_matrix = cp.zeros(
-        (vortices.shape[0], vortices.shape[0]), dtype=np.float32)
+    dist_matrix = cp.zeros((vortices.shape[0], vortices.shape[0]), dtype=np.float32)
     tpb = 32
-    bpgx = math.ceil(dist_matrix.shape[0]/tpb)
-    bpgy = math.ceil(dist_matrix.shape[1]/tpb)
+    bpgx = math.ceil(dist_matrix.shape[0] / tpb)
+    bpgy = math.ceil(dist_matrix.shape[1] / tpb)
     _distance_matrix[(bpgx, bpgy), (tpb, tpb)](
-        dist_matrix, vortices[:, 0:2],
-        vortices[:, 0:2])
-    condition = cp.zeros((len(bins),
-                          dist_matrix.shape[0],
-                          dist_matrix.shape[1]), dtype=np.bool8)
+        dist_matrix, vortices[:, 0:2], vortices[:, 0:2]
+    )
+    condition = cp.zeros(
+        (len(bins), dist_matrix.shape[0], dist_matrix.shape[1]), dtype=np.bool8
+    )
     tpb = 16
     tpbz = 4
-    bpgx = math.ceil(dist_matrix.shape[0]/tpb)
-    bpgy = math.ceil(dist_matrix.shape[1]/tpb)
-    bpgz = math.ceil(len(bins/tpb))
-    _build_condition[(bpgx, bpgy, bpgz), (tpb, tpb, tpbz)](
-        condition, dist_matrix, bins)
-    _correlate[(bpgx, bpgy, bpgz), (tpb, tpb, tpbz)](
-        corr, vortices, bins, condition)
+    bpgx = math.ceil(dist_matrix.shape[0] / tpb)
+    bpgy = math.ceil(dist_matrix.shape[1] / tpb)
+    bpgz = math.ceil(len(bins / tpb))
+    _build_condition[(bpgx, bpgy, bpgz), (tpb, tpb, tpbz)](condition, dist_matrix, bins)
+    _correlate[(bpgx, bpgy, bpgz), (tpb, tpb, tpbz)](corr, vortices, bins, condition)
     return corr
 
 
@@ -1018,8 +1030,8 @@ def drag_force(psi: np.ndarray, U: np.ndarray) -> tuple:
         U = np.real(U)
     gradx = np.gradient(U, axis=-1)
     grady = np.gradient(U, axis=-2)
-    fx = np.sum(-gradx*psi, axis=(-2, -1))
-    fy = np.sum(-grady*psi, axis=(-2, -1))
+    fx = np.sum(-gradx * psi, axis=(-2, -1))
+    fy = np.sum(-grady * psi, axis=(-2, -1))
     if psi.ndim == 3:
         f = np.zeros((psi.shape[0], 2))
         f[:, 0] = fx
@@ -1043,8 +1055,8 @@ def drag_force_cp(psi: cp.ndarray, U: cp.ndarray) -> tuple:
         U = cp.real(U)
     gradx = cp.gradient(U, axis=-1)
     grady = cp.gradient(U, axis=-2)
-    fx = cp.sum(-gradx*psi, axis=(-2, -1))
-    fy = cp.sum(-grady*psi, axis=(-2, -1))
+    fx = cp.sum(-gradx * psi, axis=(-2, -1))
+    fy = cp.sum(-grady * psi, axis=(-2, -1))
     if psi.ndim == 3:
         f = np.zeros((psi.shape[0], 2))
         f[:, 0] = fx.get()
@@ -1052,63 +1064,3 @@ def drag_force_cp(psi: cp.ndarray, U: cp.ndarray) -> tuple:
         return f
     else:
         return np.array([fx.get(), fy.get()])
-
-
-def main():
-    phase = np.loadtxt("v500_1_phase.txt")
-    phase_cp = cp.asarray(phase)
-    # Vortex detection step
-    vortices_cp = vortex_detection_cp(phase_cp, r=1, plot=True)
-    vortices = vortex_detection(phase, plot=True, r=1)
-    bins = cp.linspace(0, phase.shape[0], 100)
-    corr = pair_correlations_cp(vortices_cp, bins)
-    plt.plot(bins[1:].get(), corr.get())
-    plt.show()
-    timer_repeat(vortex_detection, phase, N_repeat=25)
-    timer_repeat(vortex_detection_cp, phase_cp, N_repeat=25)
-    # Velocity decomposition in incompressible and compressible
-    velo, v_inc, v_comp = helmholtz_decomp_cp(phase_cp, plot=True)
-    velo, v_inc, v_comp = helmholtz_decomp(phase, plot=True)
-    timer_repeat(helmholtz_decomp, phase, N_repeat=25)
-    timer_repeat_cp(helmholtz_decomp_cp, phase_cp, N_repeat=25)
-    # Clustering benchmarks
-    dipoles, clusters, cluster_graph = cluster_vortices(vortices)
-    timer_repeat(cluster_vortices, vortices, N_repeat=100)
-    # Plot results
-    fig, (ax, ax1) = plt.subplots(1, 2)
-    YY, XX = np.indices(v_inc[0].shape)
-    im = ax.imshow(np.hypot(v_inc[0], v_inc[1]), cmap='viridis')
-    ax.streamplot(XX, YY, v_inc[0], v_inc[1],
-                  density=5, color='white', linewidth=1)
-    positions = dict(
-        zip(cluster_graph.nodes, vortices[cluster_graph.nodes, 0:2]))
-    edge_color = []
-    for edge in cluster_graph.edges:
-        if vortices[edge[0], 2] == 1:
-            edge_color.append('r')
-        else:
-            edge_color.append('b')
-    nx.draw(cluster_graph, ax=ax, pos=positions, with_labels=False,
-            node_size=45, node_color=vortices[cluster_graph.nodes, 2], cmap='bwr', edge_color=edge_color, width=2)
-    for dip in range(dipoles.shape[0]):
-        ln_d, = ax.plot(vortices[dipoles[dip, :], 0],
-                        vortices[dipoles[dip, :], 1], color='g', marker='o', label='Dipoles')
-    ax.set_title(r'Incompressible velocity $|v^{inc}|$')
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_ylim(0, phase.shape[1])
-    ax.set_ylim(0, phase.shape[0])
-    ax.legend(handles=[ln_d])
-    plt.colorbar(im, ax=ax)
-    bins, edges = cluster_histogram(clusters, plot=False)
-    ax1.stairs(bins, edges, fill=True)
-    ax1.set_xlabel("Size of cluster")
-    ax1.set_ylabel("Number of vortices")
-    ax1.set_xlim(1, np.max(edges))
-    ax1.set_yscale("log")
-    ax1.set_title("Histogram of cluster size")
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
