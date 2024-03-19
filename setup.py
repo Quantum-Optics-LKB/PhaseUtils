@@ -21,6 +21,7 @@ setup(
         "scikit-image",
         "cupy",
         "networkx",
+        "numbalsoda",
     ],
     classifiers=[
         "Development Status :: 1 - Planning",

@@ -53,7 +53,8 @@ def timer_repeat_cp(func, *args, N_repeat=1000):
     return np.mean(t), np.std(t)
 
 
-def main():
+def main() -> None:
+    N_repeat = 5
     phase = np.loadtxt("v500_1_phase.txt")
     phase_cp = cp.asarray(phase)
     # Vortex detection step
@@ -63,16 +64,16 @@ def main():
     corr = velocity.pair_correlations_cp(vortices_cp, bins)
     plt.plot(bins[1:].get(), corr.get())
     plt.show()
-    timer_repeat(velocity.vortex_detection, phase, N_repeat=25)
-    timer_repeat(velocity.vortex_detection_cp, phase_cp, N_repeat=25)
+    timer_repeat(velocity.vortex_detection, phase, N_repeat=N_repeat)
+    timer_repeat(velocity.vortex_detection_cp, phase_cp, N_repeat=N_repeat)
     # Velocity decomposition in incompressible and compressible
-    velo, v_inc, v_comp = velocity.helmholtz_decomp_cp(phase_cp, plot=True)
-    velo, v_inc, v_comp = velocity.helmholtz_decomp(phase, plot=True)
-    timer_repeat(velocity.helmholtz_decomp, phase, N_repeat=25)
-    timer_repeat_cp(velocity.helmholtz_decomp_cp, phase_cp, N_repeat=25)
+    velo, v_inc, v_comp = velocity.helmholtz_decomp_cp(phase_cp, plot=False)
+    velo, v_inc, v_comp = velocity.helmholtz_decomp(phase, plot=False)
+    timer_repeat(velocity.helmholtz_decomp, phase, N_repeat=N_repeat)
+    timer_repeat_cp(velocity.helmholtz_decomp_cp, phase_cp, N_repeat=N_repeat)
     # Clustering benchmarks
     dipoles, clusters, cluster_graph = velocity.cluster_vortices(vortices)
-    timer_repeat(velocity.cluster_vortices, vortices, N_repeat=100)
+    timer_repeat(velocity.cluster_vortices, vortices, N_repeat=N_repeat)
     # Plot results
     fig, (ax, ax1) = plt.subplots(1, 2)
     YY, XX = np.indices(v_inc[0].shape)

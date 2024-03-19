@@ -19,8 +19,16 @@ import multiprocessing
 from matplotlib import colors
 
 pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
-pyfftw.config.PLANNER_EFFORT = "FFTW_MEASURE"
+pyfftw.config.PLANNER_EFFORT = "FFTW_ESTIMATE"
 pyfftw.interfaces.cache.enable()
+
+# try to load previous fftw wisdom
+try:
+    with open("fft.wisdom", "rb") as file:
+        wisdom = pickle.load(file)
+        pyfftw.import_wisdom(wisdom)
+except FileNotFoundError:
+    print("No FFT wisdom found, starting over ...")
 
 
 @numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
@@ -141,7 +149,7 @@ def phase_sum(velo: np.ndarray, r: int = 1) -> np.ndarray:
     return cont
 
 
-@cuda.jit(fastmath=True, boundscheck=False)
+@cuda.jit(fastmath=True)
 def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int):
     """Computes the phase gradient winding in place with a plaquette radius r
 
@@ -271,13 +279,6 @@ def helmholtz_decomp(field: np.ndarray, plot=False, dx: float = 1) -> tuple:
         tuple: (velo, v_incc, v_comp) a tuple containing the velocity field,
         the incompressible velocity and compressible velocity.
     """
-    # try to load previous fftw wisdom
-    try:
-        with open("fft.wisdom", "rb") as file:
-            wisdom = pickle.load(file)
-            pyfftw.import_wisdom(wisdom)
-    except FileNotFoundError:
-        print("No FFT wisdom found, starting over ...")
     sy, sx = field.shape
     # meshgrid in k space
     kx = 2 * np.pi * np.fft.rfftfreq(sx, d=dx)
@@ -581,6 +582,8 @@ def vortex_detection_cp(
     if isinstance(r, int):
         if r > 1:
             windings = cp.zeros((r, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
+        else:
+            windings = cp.zeros_like(velo[0], dtype=np.float32)
     elif isinstance(r, list):
         windings = cp.zeros(
             (len(r), phase.shape[-2], phase.shape[-1]), dtype=np.float32
@@ -598,6 +601,10 @@ def vortex_detection_cp(
             cond_plus = cond_plus.all(axis=0)
             cond_minus = windings < -2 * np.pi
             cond_minus = cond_minus.all(axis=0)
+        else:
+            phase_sum_cp[(bpgx, bpgy), (tpb, tpb)](velo, windings, r)
+            cond_plus = windings > 2 * np.pi
+            cond_minus = windings < -2 * np.pi
 
     elif isinstance(r, list):
         for ir, rr in enumerate(r):
@@ -640,7 +647,9 @@ def vortex_detection_cp(
     return vortices
 
 
-@numba.njit(numba.bool_[:](numba.int64[:]), cache=True, fastmath=True)
+@numba.njit(
+    numba.bool_[:](numba.int64[:]), cache=True, fastmath=True, boundscheck=False
+)
 def mutual_nearest_neighbors(nn) -> np.ndarray:
     """Returns a list of pairs of mutual nearest neighbors and
     the product of their charges
@@ -700,6 +709,7 @@ def build_pairs(
     ),
     cache=True,
     parallel=True,
+    boundscheck=False,
 )
 def edges_to_connect(
     neighbors: np.ndarray, dists_opp: np.ndarray, dists: np.ndarray
@@ -881,7 +891,10 @@ def cluster_radii(
 
 
 @numba.njit(
-    numba.float32(numba.float32[:, :], numba.int64[:, :]), parallel=True, cache=True
+    numba.float32(numba.float32[:, :], numba.int64[:, :]),
+    parallel=True,
+    cache=True,
+    boundscheck=False,
 )
 def _ck(vortices: np.ndarray, neighbors: np.ndarray) -> float:
     """Correlation kernel
@@ -921,7 +934,7 @@ def ck(vortices: np.ndarray, k: int) -> float:
     return c
 
 
-@cuda.jit(cache=True, fastmath=True, boundscheck=False)
+@cuda.jit(cache=True, fastmath=True)
 def _distance_matrix(dist: cp.ndarray, x: cp.ndarray, y: cp.ndarray):
     """Compute distance matrix using CUDA
 
@@ -936,7 +949,7 @@ def _distance_matrix(dist: cp.ndarray, x: cp.ndarray, y: cp.ndarray):
             dist[j, i] = dist[i, j]
 
 
-@cuda.jit(cache=True, boundscheck=False)
+@cuda.jit(cache=True, fastmath=True)
 def _build_condition(condition: cp.ndarray, dist: cp.ndarray, bins: cp.ndarray):
     """Constructs the array that represents the vortices pair i, j to consider
     in the bin k.
@@ -955,7 +968,7 @@ def _build_condition(condition: cp.ndarray, dist: cp.ndarray, bins: cp.ndarray):
         condition[k - 1, i, j] &= dist[i, j] < bins[k]
 
 
-@cuda.jit(cache=True, fastmath=True, boundscheck=False)
+@cuda.jit(cache=True, fastmath=True)
 def _correlate(
     corr: cp.ndarray, vortices: cp.ndarray, bins: cp.ndarray, condition: cp.ndarray
 ):

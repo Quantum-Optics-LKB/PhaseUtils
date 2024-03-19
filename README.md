@@ -1,6 +1,21 @@
 # PhaseUtils
 *A selection of utilities to retrieve and process phase information of optical fields*
 
+## Installation
+
+First clone the repository:
+
+```bash
+git clone https://github.com/Quantum-Optics-LKB/PhaseUtils.git
+cd PhaseUtils
+```
+
+Then pip install the package:
+
+```bash
+pip install .
+```
+
 ## Dependencies
 
 - `numba`
