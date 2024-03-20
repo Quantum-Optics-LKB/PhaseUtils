@@ -55,7 +55,7 @@ These functions use JIT compilation with `numba` for optimal performance to allo
 # Acknowledgements
 
 We acknowledge the extremely meaningful conversations we had with Riccardo Panico and Ashton Bradley.
-We acknowledge contributions from Kevin Falque and contructive feedback from Clara Piekarski and Quentin Schibler.
+We acknowledge contributions from Kevin Falque and constructive feedback from Clara Piekarski and Quentin Schibler.
 
 # Authors contribution
 
