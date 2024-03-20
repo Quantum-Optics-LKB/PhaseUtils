@@ -723,7 +723,7 @@ def im_osc(
         wisdom = pyfftw.export_wisdom()
         pickle.dump(wisdom, file)
     if plot:
-        fig, ax = plt.subplots(1, 4)
+        fig, ax = plt.subplots(1, 4, layout="constrained")
         im0 = ax[0].imshow(im, cmap="gray")
         ax[0].set_title("Real space")
         fig.colorbar(im0, ax=ax[0])
@@ -738,9 +738,9 @@ def im_osc(
 
         ax[1].set_title("Fourier space")
         ax[1].legend(["Oscillating", "Continuous"])
-        im = ax[2].imshow(np.log10(np.abs(im_fft) + 1e-15))
+        im = ax[2].imshow(np.abs(im_fringe) ** 2)
         fig.colorbar(im, ax=ax[2])
-        ax[2].set_title("Filtered Fourier signal")
+        ax[2].set_title("Intensity of filtered signal")
         im = ax[3].imshow(np.angle(im_fringe), cmap="twilight_shifted")
         fig.colorbar(im, ax=ax[3])
         ax[3].set_title("Phase of filtered signal")
