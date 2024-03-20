@@ -33,6 +33,7 @@ pip install .
 
 For optimal speed, this code uses your GPU (graphics card) for vortex detection. For this, you need specific libraries. For Nvidia cards, you need a [CUDA](https://developer.nvidia.com/cuda-toolkit) install. For AMD cards, you need a [ROCm](https://rocmdocs.amd.com/en/latest/) install. Of course, you need to update your graphics driver to take full advantage of these. In any case we use [CuPy](cupy.dev) for the Python interface to these libraries. The routines dependant on cupy have the `_cp` postfix in their names.
 
+**The `cupy` dependency is not included in `setup.py` in order to not break installation on platforms that do not support it !**
 
 ### PyFFTW
 
