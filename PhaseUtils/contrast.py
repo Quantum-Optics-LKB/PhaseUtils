@@ -524,7 +524,7 @@ def disk(m: int, n: int, center: tuple, radius: int) -> np.ndarray:
     return out
 
 
-def centre(im, truncate: bool = True) -> tuple[int | float, int | float]:
+def centre(im, truncate: bool = True) -> tuple:
     """Fits the center of the image using gaussian fitting
 
     Args:
