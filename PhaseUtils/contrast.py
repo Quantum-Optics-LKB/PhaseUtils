@@ -90,7 +90,7 @@ if CUPY_AVAILABLE:
         center: tuple = (1024, 1024),
         out: bool = True,
         nb_pix: tuple = (2048, 2048),
-    ) -> np.ndarray:
+    ) -> cp.ndarray:
         """Defines a circular mask
 
         Args:
@@ -100,7 +100,7 @@ if CUPY_AVAILABLE:
             nb_pix (tuple, optional): Shape of the mask. Defaults to (2048, 2048).
 
         Returns:
-            np.ndarray: The array of booleans defining the mask
+            cp.ndarray: The array of booleans defining the mask
         """
         Y, X = cp.ogrid[: nb_pix[0], : nb_pix[1]]
         dist_from_center = cp.hypot(X - center[0], Y - center[1])
@@ -113,7 +113,7 @@ if CUPY_AVAILABLE:
         return mask
 
     @cuda.jit((numba.complex64[:, :], numba.float32[:, :]), fastmath=True)
-    def angle_fast_cp(x: cp.ndarray, out: cp.ndarray):
+    def angle_fast_cp(x: cp.ndarray, out: cp.ndarray) -> None:
         """Accelerates a smidge angle by using fastmath
 
         Args:
@@ -323,7 +323,7 @@ if CUPY_AVAILABLE:
             return_cont (bool, optionnal): Returns the continuous part of the field. Defaults to False.
 
         Returns:
-            np.ndarray: Recovered field
+            cp.ndarray: Recovered field
         """
         if radius == 0:
             radius = min(im.shape) // 4
@@ -380,7 +380,7 @@ if CUPY_AVAILABLE:
             return_cont (bool, optionnal): Returns the continuous part of the field. Defaults to False.
 
         Returns:
-            np.ndarray: Recovered phase
+            cp.ndarray: Recovered phase
         """
         angle = cp.empty((im.shape[0] // 2, im.shape[1] // 2), dtype=np.float32)
         tpb = 16
@@ -402,7 +402,7 @@ if CUPY_AVAILABLE:
             im (np.ndarray): The interferogram
 
         Returns:
-            np.ndarray: The contrast map
+            cp.ndarray: The contrast map
         """
         im_cont, im_fringe = im_osc_fast_cp(im, cont=True)
         analytic = cp.abs(im_fringe)
@@ -410,7 +410,7 @@ if CUPY_AVAILABLE:
         return 2 * analytic / cont
 
 
-def gauss_fit(x, waist, mean):
+def gauss_fit(x, waist, mean) -> Any:
     """Gaussian BEAM intensity fitting
     Attention !!! Different convention as for a regular gaussian
 
@@ -476,7 +476,7 @@ def angle_fast(x: np.ndarray) -> np.ndarray:
 
 
 @numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
-def exp_angle_fast(x: np.ndarray, y: np.ndarray):
+def exp_angle_fast(x: np.ndarray, y: np.ndarray) -> None:
     """Fast multiplication by exp(-1j*x)
 
     Args:
@@ -491,7 +491,7 @@ def exp_angle_fast(x: np.ndarray, y: np.ndarray):
 
 
 @numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
-def exp_angle_fast_scalar(x: np.ndarray, y: complex):
+def exp_angle_fast_scalar(x: np.ndarray, y: complex) -> None:
     """Fast multiplication by exp(-1j*y)
 
     Args:
@@ -507,7 +507,7 @@ def exp_angle_fast_scalar(x: np.ndarray, y: complex):
 
 @lru_cache(maxsize=10)
 @numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
-def disk(m: int, n: int, center: tuple, radius: int):
+def disk(m: int, n: int, center: tuple, radius: int) -> np.ndarray:
     """Numba compatible mgrid in i,j indexing style
 
     Args:
@@ -524,7 +524,7 @@ def disk(m: int, n: int, center: tuple, radius: int):
     return out
 
 
-def centre(im, truncate: bool = True):
+def centre(im, truncate: bool = True) -> tuple[int | float, int | float]:
     """Fits the center of the image using gaussian fitting
 
     Args:
@@ -556,7 +556,7 @@ def centre(im, truncate: bool = True):
     return centre_x, centre_y
 
 
-def waist(im, plot=False):
+def waist(im, plot=False) -> tuple[int, int]:
     """Fits the waist of the image using gaussian fitting
 
     Args:

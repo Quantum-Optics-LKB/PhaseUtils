@@ -1,10 +1,17 @@
 from PhaseUtils import velocity
 import matplotlib.pyplot as plt
 import numpy as np
-import cupy as cp
 import networkx as nx
 import time
 from typing import Callable
+
+# cupy available logic
+try:
+    import cupy as cp
+
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
 # simple timing decorator
 
 
@@ -36,41 +43,33 @@ def timer_repeat(func: Callable, *args, N_repeat=1000):
     return np.mean(t), np.std(t)
 
 
-def timer_repeat_cp(func: Callable, *args, N_repeat=1000):
-    t = np.zeros(N_repeat, dtype=np.float32)
-    for i in range(N_repeat):
-        start_gpu = cp.cuda.Event()
-        end_gpu = cp.cuda.Event()
-        start_gpu.record()
-        func(*args)
-        end_gpu.record()
-        end_gpu.synchronize()
-        t[i] = cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-    print(
-        f"{N_repeat} executions of {func.__name__!r} "
-        f"{np.mean(t):.3f} +/- {np.std(t):.3f} ms per loop (min : {np.min(t):.3f} / max : {np.max(t):.3f} ms / med: {np.median(t):.3f})"
-    )
-    return np.mean(t), np.std(t)
+if CUPY_AVAILABLE:
+
+    def timer_repeat_cp(func: Callable, *args, N_repeat=1000):
+        t = np.zeros(N_repeat, dtype=np.float32)
+        for i in range(N_repeat):
+            start_gpu = cp.cuda.Event()
+            end_gpu = cp.cuda.Event()
+            start_gpu.record()
+            func(*args)
+            end_gpu.record()
+            end_gpu.synchronize()
+            t[i] = cp.cuda.get_elapsed_time(start_gpu, end_gpu)
+        print(
+            f"{N_repeat} executions of {func.__name__!r} "
+            f"{np.mean(t):.3f} +/- {np.std(t):.3f} ms per loop (min : {np.min(t):.3f} / max : {np.max(t):.3f} ms / med: {np.median(t):.3f})"
+        )
+        return np.mean(t), np.std(t)
 
 
 def main() -> None:
     N_repeat = 5
-    phase = np.loadtxt("v500_1_phase.txt")
-    phase_cp = cp.asarray(phase)
-    # Vortex detection step
-    vortices_cp = velocity.vortex_detection_cp(phase_cp, r=1, plot=True)
+    phase = np.loadtxt("../examples/v500_1_phase.txt")
     vortices = velocity.vortex_detection(phase, plot=True, r=1)
-    bins = cp.linspace(0, phase.shape[0], 100)
-    corr = velocity.pair_correlations_cp(vortices_cp, bins)
-    plt.plot(bins[1:].get(), corr.get())
-    plt.show()
     timer_repeat(velocity.vortex_detection, phase, N_repeat=N_repeat)
-    timer_repeat(velocity.vortex_detection_cp, phase_cp, N_repeat=N_repeat)
     # Velocity decomposition in incompressible and compressible
-    velo, v_inc, v_comp = velocity.helmholtz_decomp_cp(phase_cp, plot=False)
     velo, v_inc, v_comp = velocity.helmholtz_decomp(phase, plot=False)
     timer_repeat(velocity.helmholtz_decomp, phase, N_repeat=N_repeat)
-    timer_repeat_cp(velocity.helmholtz_decomp_cp, phase_cp, N_repeat=N_repeat)
     # Clustering benchmarks
     dipoles, clusters, cluster_graph = velocity.cluster_vortices(vortices)
     timer_repeat(velocity.cluster_vortices, vortices, N_repeat=N_repeat)
@@ -120,6 +119,17 @@ def main() -> None:
     ax1.set_yscale("log")
     ax1.set_title("Histogram of cluster size")
     plt.show()
+    if CUPY_AVAILABLE:
+        bins = cp.linspace(0, phase.shape[0], 100)
+        phase_cp = cp.asarray(phase)
+        # Vortex detection step
+        vortices_cp = velocity.vortex_detection_cp(phase_cp, r=1, plot=True)
+        corr = velocity.pair_correlations_cp(vortices_cp, bins)
+        plt.plot(bins[1:].get(), corr.get())
+        plt.show()
+        velo, v_inc, v_comp = velocity.helmholtz_decomp_cp(phase_cp, plot=False)
+        timer_repeat_cp(velocity.vortex_detection_cp, phase_cp, N_repeat=N_repeat)
+        timer_repeat_cp(velocity.helmholtz_decomp_cp, phase_cp, N_repeat=N_repeat)
 
 
 if __name__ == "__main__":
