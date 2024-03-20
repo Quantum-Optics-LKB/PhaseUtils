@@ -59,6 +59,6 @@ We acknowledge contributions from Kevin Falque and constructive feedback from Cl
 
 # Authors contribution
 
-T.A wrote the original code and is the main maintainer, M.B has contributed on the vortex detection and classification routines. Q.G supervised the project.
+T.A wrote the original code and is the main maintainer, M.B was the main contributor on `velocity`. Q.G supervised the project.
 
 # References
