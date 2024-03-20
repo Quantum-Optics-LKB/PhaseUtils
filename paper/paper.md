@@ -41,7 +41,7 @@ It allows a singe shot, high resolution retrieval of the full complex optical fi
 
 `PhaseUtils` harnesses the power of modern FFT algorithms to deliver performance focused tools to retrieve and process the phase information of optical fields with its utilities `contrast` and `velocity`.
 This allows to compute a large number of observables relevant in the context of quantum fluids of light [@aladjidiFullOpticalControl2023] [@glorieuxHotAtomicVapors2023] [@bakerrasooliTurbulentDynamicsTwodimensional2023].
-`velocity` implements all of the observables introduced in [@PhysRevA.106.043322], and extends it by providing a fast tree-based implementation of the vortex clustering algorithm.
+`velocity` implements all of the observables introduced in [@bradleyEnergySpectraVortex2012] and implemented in the `Julia` package [`QuantumFluidSpectra.jl`](https://github.com/AshtonSBradley/QuantumFluidSpectra.jl) [@PhysRevA.106.043322], and extends it by providing a fast tree-based implementation of the vortex clustering algorithm.
 
 ![Example of the vortex detection and clustering algorithm. Positively charged vortices are in red, negatively charged vortices are blue and dipoles are in green. The background image is the incompressible velocity in which vortices can be seen as bright peaks.\label{fig:clusters}](../assets/clusters.png)
 
