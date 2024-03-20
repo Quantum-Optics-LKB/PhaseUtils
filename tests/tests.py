@@ -4,11 +4,11 @@ import numpy as np
 import cupy as cp
 import networkx as nx
 import time
-
+from typing import Callable
 # simple timing decorator
 
 
-def timer(func):
+def timer(func: Callable):
     """This function shows the execution time of
     the function object passed"""
 
@@ -22,7 +22,7 @@ def timer(func):
     return wrap_func
 
 
-def timer_repeat(func, *args, N_repeat=1000):
+def timer_repeat(func: Callable, *args, N_repeat=1000):
     t = np.zeros(N_repeat, dtype=np.float32)
     for i in range(N_repeat):
         t0 = time.perf_counter()
@@ -36,7 +36,7 @@ def timer_repeat(func, *args, N_repeat=1000):
     return np.mean(t), np.std(t)
 
 
-def timer_repeat_cp(func, *args, N_repeat=1000):
+def timer_repeat_cp(func: Callable, *args, N_repeat=1000):
     t = np.zeros(N_repeat, dtype=np.float32)
     for i in range(N_repeat):
         start_gpu = cp.cuda.Event()

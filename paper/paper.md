@@ -42,6 +42,8 @@ It allows a singe shot, high resolution retrieval of the full complex optical fi
 This allows to compute a large number of observables relevant in the context of quantum fluids of light [@aladjidiFullOpticalControl2023] [@glorieuxHotAtomicVapors2023].
 `velocity` implements all of the observables introduced in [@PhysRevA.106.043322], and extends it by providing a fast tree-based implementation of the vortex clustering algorithm.
 
+![Example of the vortex detection and clustering algorithm. Positively charged vortices are in red, negatively charged vortices are blue and dipoles are in green. The background image is the incompressible velocity in which vortices can be seen as bright peaks.\label{fig:clusters}](../assets/clusters.png)
+
 It also provide tools with `SLM` to control the optical fields using spatial light modulators, implementing holography techniques such as [@bolducExactSolutionSimultaneous2013].
 This utility was inspired by [@sebastien_m_popoff_2017_293042] and implements the same basic functionalities, using a faster backend (`opencv`). 
 Since it is window-based, it can be used for any spatial light modulator that is recognized as a screen.
