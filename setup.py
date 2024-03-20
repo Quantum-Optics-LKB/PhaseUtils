@@ -19,7 +19,6 @@ setup(
         "pyfftw",
         "numba",
         "scikit-image",
-        "cupy",
         "networkx",
         "numbalsoda",
         "screeninfo",

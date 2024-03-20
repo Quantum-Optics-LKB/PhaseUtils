@@ -35,6 +35,7 @@ class SLMscreen:
         cv2.namedWindow(name, cv2.WINDOW_NORMAL)
         shift = None
         for m in screeninfo.get_monitors():
+            print(m)
             if str(position) in m.name:
                 shift = m.x
                 self.resX = m.width
