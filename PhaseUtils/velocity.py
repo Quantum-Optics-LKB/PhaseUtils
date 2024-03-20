@@ -43,7 +43,7 @@ if CUPY_AVAILABLE:
     @cuda.jit(fastmath=True)
     def _az_avg_cp(
         image: cp.ndarray, prof: cp.ndarray, prof_counts: cp.ndarray, center: tuple
-    ):
+    ) -> None:
         """Kernel for azimuthal average calculation
 
         Args:
@@ -89,7 +89,7 @@ if CUPY_AVAILABLE:
         return prof
 
     @cuda.jit(fastmath=True)
-    def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int):
+    def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int) -> None:
         """Computes the phase gradient winding in place with a plaquette radius r
 
         Args:
@@ -377,7 +377,7 @@ if CUPY_AVAILABLE:
         return vortices
 
     @cuda.jit(cache=True, fastmath=True)
-    def _distance_matrix(dist: cp.ndarray, x: cp.ndarray, y: cp.ndarray):
+    def _distance_matrix(dist: cp.ndarray, x: cp.ndarray, y: cp.ndarray) -> None:
         """Compute distance matrix using CUDA
 
         Args:
@@ -393,7 +393,9 @@ if CUPY_AVAILABLE:
                 dist[j, i] = dist[i, j]
 
     @cuda.jit(cache=True, fastmath=True)
-    def _build_condition(condition: cp.ndarray, dist: cp.ndarray, bins: cp.ndarray):
+    def _build_condition(
+        condition: cp.ndarray, dist: cp.ndarray, bins: cp.ndarray
+    ) -> None:
         """Constructs the array that represents the vortices pair i, j to consider
         in the bin k.
 
@@ -413,7 +415,7 @@ if CUPY_AVAILABLE:
     @cuda.jit(cache=True, fastmath=True)
     def _correlate(
         corr: cp.ndarray, vortices: cp.ndarray, bins: cp.ndarray, condition: cp.ndarray
-    ):
+    ) -> None:
         """Compute the actual correlation function
 
         Args:
@@ -802,7 +804,7 @@ def mutual_nearest_neighbors(nn) -> np.ndarray:
 
 def build_pairs(
     vortices: np.ndarray, nn: np.ndarray, mutu: np.ndarray, queue: np.ndarray
-):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Builds the dipoles and the pairs of same sign
 
     Args:
@@ -874,7 +876,7 @@ def grow_clusters(
     tree_plus: spatial.KDTree,
     tree_minus: spatial.KDTree,
     cluster_graph: nx.Graph,
-):
+) -> None:
     """Grows the clusters in the graph by applying rule 2 on the remaining vortices (i.e without dipoles)
 
     Args:
