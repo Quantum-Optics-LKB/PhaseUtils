@@ -394,21 +394,20 @@ if CUPY_AVAILABLE:
         angle_fast_cp[(bpgx, bpgy), (tpb, tpb)](im_ifft, angle)
         return angle
 
+    def contr_fast_cp(im: cp.ndarray) -> cp.ndarray:
+        """Computes the contrast of an interferogram assuming proper alignment
+        i.e minimum fringe size of sqrt(2) pixels
 
-def contr_fast_cp(im: cp.ndarray) -> cp.ndarray:
-    """Computes the contrast of an interferogram assuming proper alignment
-    i.e minimum fringe size of sqrt(2) pixels
+        Args:
+            im (np.ndarray): The interferogram
 
-    Args:
-        im (np.ndarray): The interferogram
-
-    Returns:
-        np.ndarray: The contrast map
-    """
-    im_cont, im_fringe = im_osc_fast_cp(im, cont=True)
-    analytic = cp.abs(im_fringe)
-    cont = cp.abs(im_cont)
-    return 2 * analytic / cont
+        Returns:
+            np.ndarray: The contrast map
+        """
+        im_cont, im_fringe = im_osc_fast_cp(im, cont=True)
+        analytic = cp.abs(im_fringe)
+        cont = cp.abs(im_cont)
+        return 2 * analytic / cont
 
 
 def gauss_fit(x, waist, mean):
