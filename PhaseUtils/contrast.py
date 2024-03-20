@@ -717,9 +717,7 @@ def im_osc(
     im_fringe = pyfftw.interfaces.numpy_fft.ifft2(
         np.fft.fftshift(im_fft_fringe), s=im.shape, axes=(-1, -2)
     )
-    im_fringe = exp_angle_fast_scalar(
-        im_fringe, im_fringe[im.shape[0] // 2, im.shape[1] // 2]
-    )
+    exp_angle_fast_scalar(im_fringe, im_fringe[im.shape[0] // 2, im.shape[1] // 2])
     # save FFT wisdom
     with open("fft.wisdom", "wb") as file:
         wisdom = pyfftw.export_wisdom()
@@ -743,7 +741,7 @@ def im_osc(
         im = ax[2].imshow(np.log10(np.abs(im_fft) + 1e-15))
         fig.colorbar(im, ax=ax[2])
         ax[2].set_title("Filtered Fourier signal")
-        im = ax[3].imshow(np.angle(im_fringe), cmap="twilight")
+        im = ax[3].imshow(np.angle(im_fringe), cmap="twilight_shifted")
         fig.colorbar(im, ax=ax[3])
         ax[3].set_title("Phase of filtered signal")
         plt.show()
