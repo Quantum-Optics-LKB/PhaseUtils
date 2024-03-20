@@ -22,6 +22,7 @@ setup(
         "cupy",
         "networkx",
         "numbalsoda",
+        "screeninfo",
     ],
     classifiers=[
         "Development Status :: 1 - Planning",
