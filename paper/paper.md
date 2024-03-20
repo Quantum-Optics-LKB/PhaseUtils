@@ -26,9 +26,9 @@ Off-axis interferometry is a powerful technique that allows full-field retrieval
 [@verrierOffaxisDigitalHologram2011].
 Based on the deconvolution of the inteferograms using Fourier transforms, it allows live monitoring of optical fields.
 It comprises of three utilities `contrast`, `velocity` and `SLM`:
-- `contrast` is focused on the retrieval of the phase.
-- `velocity` is focused on the processing of the complex field.
-- `SLM` provides a performant, platform independant window-based tool to control spatial light modulators such as liquid crystal spatial light modulators (LCOS SLM) or digital micro-mirror devices (DMD).
+  - `contrast` is focused on the retrieval of the phase.
+  - `velocity` is focused on the processing of the complex field.
+  - `SLM` provides a performant, platform independant window-based tool to control spatial light modulators such as liquid crystal spatial light modulators (LCOS SLM) or digital micro-mirror devices (DMD).
 
 # Statement of need
 
