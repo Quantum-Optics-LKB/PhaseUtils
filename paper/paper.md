@@ -47,7 +47,7 @@ This allows to compute a large number of observables relevant in the context of 
 
 It also provide tools with `SLM` to control the optical fields using spatial light modulators, implementing holography techniques such as [@bolducExactSolutionSimultaneous2013].
 This utility was inspired by [@sebastien_m_popoff_2017_293042] and implements the same basic functionalities, using a faster backend (`opencv`).
-Since it functions by instantiating a simple graphical window, it can be used for any spatial light modulator that is recognized as a screen.
+Since it functions by instantiating a graphical window, it can be used for any spatial light modulator that is recognized as a screen.
 It also extends the simple control functionality with all of the relevant functions to
 generate arbitrary states of light using these modulators.
 These functions use JIT compilation with `numba` for optimal performance to allow for fast live control.
