@@ -636,6 +636,7 @@ def im_osc(
 ) -> tuple:
     """Separates the continuous and oscillating components of an image using
     Fourier filtering.
+    Automatically detects the oscillating component in Fourier space.
 
     :param np.ndarray im: Description of parameter `im`.
     :param bool cont: Returns or not the continuons component
@@ -715,6 +716,9 @@ def im_osc(
     ] = im_fft
     im_fringe = pyfftw.interfaces.numpy_fft.ifft2(
         np.fft.fftshift(im_fft_fringe), s=im.shape, axes=(-1, -2)
+    )
+    im_fringe = exp_angle_fast_scalar(
+        im_fringe, im_fringe[im.shape[0] // 2, im.shape[1] // 2]
     )
     # save FFT wisdom
     with open("fft.wisdom", "wb") as file:
