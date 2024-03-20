@@ -426,7 +426,7 @@ def gauss_fit(x, waist, mean):
     return np.exp(-2 * (x - mean) ** 2 / waist**2)
 
 
-@numba.njit(parallel=True, cache=True, fastmath=True)
+@numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
 def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
     """Calculates the azimuthally averaged radial profile.
 
@@ -459,7 +459,7 @@ def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
     return prof
 
 
-@numba.njit(fastmath=True, cache=True, parallel=True)
+@numba.njit(fastmath=True, cache=True, parallel=True, boundscheck=False)
 def angle_fast(x: np.ndarray) -> np.ndarray:
     """Accelerates a smidge angle by using fastmath
 
@@ -476,7 +476,7 @@ def angle_fast(x: np.ndarray) -> np.ndarray:
     return out
 
 
-@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True)
+@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
 def exp_angle_fast(x: np.ndarray, y: np.ndarray):
     """Fast multiplication by exp(-1j*x)
 
@@ -491,7 +491,7 @@ def exp_angle_fast(x: np.ndarray, y: np.ndarray):
             x[i, j] *= cmath.exp(-1j * cmath.phase(y[i, j]))
 
 
-@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True)
+@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
 def exp_angle_fast_scalar(x: np.ndarray, y: complex):
     """Fast multiplication by exp(-1j*y)
 
@@ -507,7 +507,7 @@ def exp_angle_fast_scalar(x: np.ndarray, y: complex):
 
 
 @lru_cache(maxsize=10)
-@numba.njit(cache=True, parallel=True, boundscheck=False)
+@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
 def disk(m: int, n: int, center: tuple, radius: int):
     """Numba compatible mgrid in i,j indexing style
 
