@@ -396,3 +396,29 @@ def codify_two_values(
 
     phase_temp = np.exp(1j * mask * max_value)
     return np.angle(phase_temp)
+
+
+def hyberbolic_tangent(
+    m: int, n: int, width: float, contrast: float = 1, angle: float = 0
+) -> np.ndarray:
+    """Generate a hyberbolic tangent profile.
+    This generates a smoothed jump from 1-contrast to contrast
+    using a tanh function.
+
+    Args:
+        m (int): Height of the pattern
+        n (int): Width of the pattern
+        width (float): Width of the transition zone
+        contrast (float, optional): Height difference between the two zones.
+        Defaults to 1.
+        angle (float, optional): Angle of the transition zone.
+        Defaults to 0 (vertical).
+    """
+    angle = np.pi * angle / 180
+    y, x = mgrid(m, n)
+    x = x - n / 2.0
+    y = y - m / 2.0
+    jump = np.tanh(np.cos(angle) * x / width + np.sin(angle) * y / width)
+    jump = (jump + 1) / 2
+    jump = 1 - contrast + contrast * jump
+    return jump
