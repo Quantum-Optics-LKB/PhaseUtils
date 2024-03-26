@@ -1239,7 +1239,7 @@ def im_osc_fast_t(
             im_ifft, im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2]
         )
     if cont:
-        return im_cont, im_ifft
+        return im_ifft, im_cont
     return im_ifft
 
 
