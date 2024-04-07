@@ -154,9 +154,9 @@ if CUPY_AVAILABLE:
         ky = 2 * np.pi * cp.fft.fftfreq(sy, d=dx)
         K = cp.array(cp.meshgrid(kx, ky))
         if regularize:
-            velo = cp.abs(field) * velocity_cp(cp.angle(field))
+            velo = cp.abs(field) * velocity_fft_cp(field)
         else:
-            velo = velocity_cp(cp.angle(field))
+            velo = velocity_fft_cp(field)
         v_tot = cp.hypot(velo[0], velo[1])
         V_k = cp.fft.rfft2(velo)
         # Helmohltz decomposition fot the compressible part
@@ -240,25 +240,26 @@ if CUPY_AVAILABLE:
         using the Fourier transform of the velocity fields
 
         Args:
-            ucomp (np.ndarray): Compressible velocity field
-            uinc (np.ndarray): Incompressible velocity field
+            ucomp (cp.ndarray): Compressible velocity field
+            uinc (cp.ndarray): Incompressible velocity field
 
         Returns:
-            (Ucc, Uii) np.ndarray: The array containing the compressible / incompressible
+            (Ucc, Uii) cp.ndarray: The array containing the compressible / incompressible
             energies as a function of the wavevector k
         """
 
         # compressible
-        Ux_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[0])))
-        Uy_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[1])))
-        Uc = Ux_c**2 + Uy_c**2
+        Uc = cp.fft.fftshift(cp.fft.fft2(ucomp))
+        Uc = Uc.real * Uc.real + Uc.imag * Uc.imag
+        Uc = Uc.sum(axis=0)
         Ucc = az_avg_cp(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
         # incompressible
-        Ux_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[0])))
-        Uy_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[1])))
-        Ui = Ux_i**2 + Uy_i**2
+        Ui = cp.fft.fftshift(cp.fft.fft2(uinc))
+        Ui = Ui.real * Ui.real + Ui.imag * Ui.imag
+        Ui = Ui.sum(axis=0)
         Uii = az_avg_cp(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
+
         return Ucc, Uii
 
     def vortex_detection_cp(
@@ -692,15 +693,15 @@ def energy_spectrum(ucomp: np.ndarray, uinc: np.ndarray) -> np.ndarray:
     """
 
     # compressible
-    Ux_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[0])))
-    Uy_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[1])))
-    Uc = Ux_c**2 + Uy_c**2
+    Uc = np.fft.fftshift(np.fft.fft2(ucomp))
+    Uc = Uc.real * Uc.real + Uc.imag * Uc.imag
+    Uc = Uc.sum(axis=0)
     Ucc = az_avg(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
     # incompressible
-    Ux_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[0])))
-    Uy_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[1])))
-    Ui = Ux_i**2 + Uy_i**2
+    Ui = np.fft.fftshift(np.fft.fft2(uinc))
+    Ui = Ui.real * Ui.real + Ui.imag * Ui.imag
+    Ui = Ui.sum(axis=0)
     Uii = az_avg(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
 
     return Ucc, Uii
