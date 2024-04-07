@@ -135,30 +135,28 @@ if CUPY_AVAILABLE:
         velo[1, :, :] = cp.gradient(phase_unwrap[1, :, :], dx, axis=0)
         return velo
 
-    def velocity_fft_cp(phase: cp.ndarray, dx: float = 1) -> cp.ndarray:
-        """Returns the velocity from the phase using an fft to compute
-        the gradient
+    def velocity_fft_cp(field: cp.ndarray, dx: float = 1) -> cp.ndarray:
+        """Compute velocity from the field.
 
         Args:
-            phase (cp.ndarray): The field phase
-            dx (float, optional): the pixel size in m. Defaults to 1 (adimensional).
+            field (cp.ndarray): The field to compute the velocity
+            dx (float, optional): pixel size in m. Defaults to 1.
 
         Returns:
-            cp.ndarray: The velocity field [vx, vy]
+            cp.ndarray: the velocity field [vx, vy]
         """
-        # 1D unwrap
-        phase_unwrap = cp.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-        phase_unwrap[0, :, :] = cp.unwrap(phase, axis=-1)
-        phase_unwrap[1, :, :] = cp.unwrap(phase, axis=-2)
+        rho = field.real * field.real + field.imag * field.imag
         # prepare K matrix
-        kx = 2 * np.pi * cp.fft.fftfreq(phase.shape[-1], dx)
-        ky = 2 * np.pi * cp.fft.fftfreq(phase.shape[-2], dx)
+        kx = 2 * np.pi * cp.fft.fftfreq(field.shape[-1], dx)
+        ky = 2 * np.pi * cp.fft.fftfreq(field.shape[-2], dx)
+        K = cp.array(cp.meshgrid(kx, ky))
         K = cp.array(cp.meshgrid(kx, ky))
         # gradient reconstruction
-        velo = cp.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-        velo = cp.fft.irfft2(
-            1j * K[:, :, 0 : K.shape[-1] // 2 + 1] * cp.fft.rfft2(phase_unwrap)
-        )
+        velo = cp.fft.ifft2(1j * K * cp.fft.fft2(field))
+        velo[0, :, :] = cp.imag(cp.conj(field) * velo[0, :, :]) / rho
+        velo[1, :, :] = cp.imag(cp.conj(field) * velo[1, :, :]) / rho
+        velo[cp.isnan(velo)] = 0
+        velo = velo.astype(np.float32)
         return velo
 
     def helmholtz_decomp_cp(

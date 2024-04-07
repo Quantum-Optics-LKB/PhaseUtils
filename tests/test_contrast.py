@@ -13,8 +13,32 @@ except ImportError:
 
 
 def main():
+    from PhaseUtils import velocity
+    from cupyx.scipy import ndimage
+
     im = np.array(Image.open("../examples/dn_ref.tiff"))
     field = contrast.im_osc_fast(im)
+    field_t = contrast.im_osc_fast_t(im)
+    field_t = ndimage.gaussian_filter(cp.asarray(field_t), 2)
+    velo = velocity.velocity_cp(cp.asarray(np.angle(field_t)))
+    velo_field = velocity.velocity_fft_cp(cp.asarray(field_t))
+    fig, ax = plt.subplots(2, 2)
+    ax[0, 0].imshow(velo[0, :, :].get(), vmin=-0.5, vmax=0.5)
+    ax[0, 1].imshow(velo[1, :, :].get(), vmin=-0.5, vmax=0.5)
+    ax[0, 0].set_title("Vx")
+    ax[0, 1].set_title("Vy")
+    ax[1, 0].imshow(velo_field[0, :, :].get(), vmin=-0.5, vmax=0.5)
+    ax[1, 1].imshow(velo_field[1, :, :].get(), vmin=-0.5, vmax=0.5)
+    ax[1, 0].set_title("Vx field")
+    ax[1, 1].set_title("Vy field")
+    plt.show()
+    fig, ax = plt.subplots(1, 2)
+    ax[0].imshow((velo[0] - velo_field[0]).get(), cmap="coolwarm", vmin=-0.5, vmax=0.5)
+    ax[1].imshow((velo[1] - velo_field[1]).get(), cmap="coolwarm", vmin=-0.5, vmax=0.5)
+    ax[0].set_title("Vx diff")
+    ax[1].set_title("Vy diff")
+    plt.show()
+    velocity.helmholtz_decomp_cp(cp.asarray(field), plot=True)
     field_t = contrast.im_osc_fast_t(im)
     contrast.im_osc(im, plot=True)
     fig, ax = plt.subplots(2, 2)
