@@ -25,6 +25,7 @@ except ImportError:
     CUPY_AVAILABLE = False
 if CUPY_AVAILABLE:
     from numba import cuda
+    from cupyx.scipy import ndimage as ndimage_cp
 
 pyfftw.interfaces.cache.enable()
 pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
@@ -38,52 +39,26 @@ except FileNotFoundError:
 
 if CUPY_AVAILABLE:
 
-    @cuda.jit(fastmath=True)
-    def _az_avg_cp(
-        image: cp.ndarray, prof: cp.ndarray, prof_counts: cp.ndarray, center: tuple
-    ):
-        """Kernel for azimuthal average calculation
-
-        Args:
-            image (cp.ndarray): The image from which to calculate the azimuthal average
-            prof (cp.ndarray): A vector containing the bins
-            prof_counts (cp.ndarray): A vector of same size as prof to count each bin
-        """
-        i, j = numba.cuda.grid(2)
-        if i < image.shape[0] and j < image.shape[1]:
-            dist = round(math.sqrt((i - center[1]) ** 2 + (j - center[0]) ** 2))
-            prof[dist] += image[i, j]
-            prof_counts[dist] += 1
-
     def az_avg_cp(image: cp.ndarray, center: tuple) -> cp.ndarray:
         """Calculates the azimuthally averaged radial profile.
 
         Args:
             image (cp.ndarray): The 2D image
-            center (tuple): The [x,y] pixel coordinates used as the center. Defaults to None,
+            center (tuple): The [x,y] pixel coordinates used as the center.
+            Defaults to None,
             which then uses the center of the image (including fractional pixels).
 
         Returns:
             cp.ndarray: prof the radially averaged profile
         """
-        # Calculate the indices from the image
-        max_r = max(
-            [
-                cp.hypot(center[0], center[1]),
-                cp.hypot(center[0] - image.shape[1], center[1]),
-                cp.hypot(center[0] - image.shape[1], center[1] - image.shape[0]),
-                cp.hypot(center[0], center[1] - image.shape[0]),
-            ]
+        sx, sy = image.shape
+        X, Y = cp.ogrid[0:sx, 0:sy]
+        r = cp.hypot(X - center[1], Y - center[0])
+        rbin = cp.round(r).astype(np.uint64)
+        radial_mean = ndimage_cp.mean(
+            image, labels=rbin, index=cp.arange(0, r.max() + 1)
         )
-        r = cp.arange(1, int(max_r) + 1, 1)
-        prof = cp.zeros_like(r, dtype=np.float32)
-        prof_counts = cp.zeros_like(r, dtype=np.float32)
-        tpb = 16
-        bpgx = math.ceil(image.shape[0] / tpb)
-        bpgy = math.ceil(image.shape[1] / tpb)
-        _az_avg_cp[(bpgx, bpgy), (tpb, tpb)](image, prof, prof_counts, center)
-        prof /= prof_counts
-        return prof
+        return radial_mean
 
     def cache_cp(
         radius: int,
