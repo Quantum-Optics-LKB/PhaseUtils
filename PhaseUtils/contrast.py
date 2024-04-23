@@ -87,6 +87,21 @@ if CUPY_AVAILABLE:
 
         return mask
 
+    @lru_cache(maxsize=10)
+    def disk_cp(m: int, n: int, center: tuple, radius: int) -> np.ndarray:
+        """Disk in i,j indexing style
+
+        Args:
+            m (int) : size along i axis
+            n (int) : size along j axis
+        Returns:
+            np.ndarray: xx, yy like numpy's meshgrid
+        """
+        mm, nn = cp.ogrid[:m, :n]
+        r = mm * mm + nn * nn
+        out = r < radius * radius
+        return out
+
     @cuda.jit((numba.complex64[:, :], numba.float32[:, :]), fastmath=True)
     def angle_fast_cp(x: cp.ndarray, out: cp.ndarray) -> None:
         """Accelerates a smidge angle by using fastmath
@@ -221,32 +236,38 @@ if CUPY_AVAILABLE:
             return phase_tot, (n2, Isat, alpha)
 
     def im_osc_fast_t_cp(
-        im: cp.ndarray, radius: int = None, cont: bool = False, quadran: str = "upper"
+        im: cp.ndarray,
+        radius: int = 0,
+        center: Any = None,
+        cont: bool = False,
     ) -> cp.ndarray:
-        """Fast field recovery assuming ideal reference angle i.e minimum fringe size of sqrt(2) pixels
-        Truncated for optimal speed
+        """Return the field.
+
+        Fast field recovery assuming ideal reference angle i.e minimum fringe
+        size of sqrt(2) pixels.
+
+        Truncated for optimal speed: returns an array with size (Ny//2, Nx//2)
+        since the recovery process has a resolution of 2px.
+
         Args:
             im (cp.ndarray): Interferogram
+            center (tuple, optional): Center of the field. Defaults to (Ny//4, Nx//4).
             radius (int, optional): Radius of filter in px. Defaults to 512.
-            return_cont (bool, optionnal): Returns the continuous part of the field. Defaults to False.
+            cont (bool, optionnal): Returns the continuous part of the field.
+            Defaults to False.
+            plans (FFTW plan list, optionnal): [plan_fft, plan_ifft] for optional
+            plan caching in streaming applications (like for a viewer).
+            Must provide a list of plans for
+            both the rfft and ifft.
 
         Returns:
-            cp.ndarray: Recovered field
+            np.ndarray: Recovered field
         """
-        if radius is None:
-            radius = max(im.shape) // 4
-        # center of first quadran
-        if quadran == "upper":
-            center = (im.shape[0] // 4, im.shape[1] // 4)
-        elif quadran == "lower":
-            center = (im.shape[0] // 4 + im.shape[0] // 2, im.shape[1] // 4)
-        assert len(im.shape) == 2, "Can only work with 2D images !"
-        # center of first quadran
-        im_ifft = cp.zeros((im.shape[0] // 2, im.shape[1] // 2), dtype=np.complex64)
         im_fft = cp.fft.rfft2(im)
-        Y, X = cp.ogrid[: im_fft.shape[0], : im_fft.shape[1]]
-        dist_from_center = cp.hypot(X - center[1], Y - center[0])
-        mask = dist_from_center > radius
+        if radius == 0:
+            radius = min(im_fft.shape[-2:]) // 2
+        if center is None:
+            center = (im_fft.shape[-2] // 4, im_fft.shape[-1] // 2)
         if cont:
             cont_size = int((np.sqrt(2) - 1) * radius)
             im_ifft_cont = cp.empty(
@@ -273,46 +294,66 @@ if CUPY_AVAILABLE:
             ]
             im_ifft_cont[cp.logical_not(mask_cont)] = 0
             im_cont = cp.fft.ifft2(im_ifft_cont)
-        im_fft[mask] = 0
-        if quadran == "upper":
-            im_ifft[:, :] = im_fft[: im_fft.shape[0] // 2, : im_fft.shape[1] - 1]
-        elif quadran == "lower":
-            im_ifft[:, :] = im_fft[im_fft.shape[0] // 2 :, : im_fft.shape[1] - 1]
-        im_ifft = cp.fft.fftshift(im_ifft)
+        if center is not None:
+            offset = (
+                -center[0] + im_fft.shape[-2] // 2,
+                -center[1] + im_fft.shape[-1] // 2,
+            )
+            im_fft = cp.roll(im_fft, offset, axis=(-2, -1))
+        im_fft = im_fft[
+            ...,
+            im_fft.shape[-2] // 4 : -im_fft.shape[-2] // 4,
+            : im_fft.shape[-1] - 1,
+        ]
+        mask = disk_cp(
+            *im_fft.shape[-2:],
+            center=(im_fft.shape[-2] // 2, im_fft.shape[-1] // 2),
+            radius=radius,
+        )
+        im_fft *= mask
+        im_ifft = cp.fft.fftshift(im_fft, axes=(-2, -1))
         im_ifft = cp.fft.ifft2(im_ifft)
         im_ifft *= cp.exp(
             -1j * cp.angle(im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2])
         )
         if cont:
-            return im_cont, im_ifft
+            return im_ifft, im_cont
         return im_ifft
 
     def im_osc_fast_cp(
-        im: cp.ndarray, radius: int = 0, cont: bool = False
+        im: cp.ndarray,
+        radius: int = 0,
+        cont: bool = False,
+        center: tuple = None,
     ) -> cp.ndarray:
-        """Fast field recovery assuming ideal reference angle
+        """Return the field.
+
+        Fast field recovery assuming ideal reference angle i.e minimum fringe
+        size of sqrt(2) pixels.
 
         Args:
             im (cp.ndarray): Interferogram
             radius (int, optional): Radius of filter in px. Defaults to 512.
-            return_cont (bool, optionnal): Returns the continuous part of the field. Defaults to False.
+            return_cont (bool, optionnal): Returns the continuous part of the
+            field.
+            Defaults to False.
+            center (tuple, optionnal): The position of the peak in Fourier domain.
+            Defaults to None.
 
         Returns:
-            cp.ndarray: Recovered field
+            np.ndarray: Recovered field
         """
         if radius == 0:
-            radius = min(im.shape) // 4
-        center = (im.shape[0] // 4, im.shape[1] // 4)
-        assert len(im.shape) == 2, "Can only work with 2D images !"
-        # center of first quadran
-        im_ifft = cp.zeros((im.shape[0], im.shape[1]), dtype=np.complex64)
+            radius = min(im.shape[-2:]) // 4
+        if center is None:
+            center = (im.shape[-2] // 4, im.shape[-1] // 4)
+        im_ifft = cp.empty(im.shape, dtype=np.complex64)
         im_fft = cp.fft.rfft2(im)
-        Y, X = cp.ogrid[: im_fft.shape[0], : im_fft.shape[1]]
-        dist_from_center = cp.hypot(X - center[1], Y - center[0])
-        mask = dist_from_center > radius
         if cont:
             cont_size = int((np.sqrt(2) - 1) * radius)
-            im_ifft_cont = im_fft.copy()
+            im_ifft_cont = cp.empty(
+                (im.shape[-2], im.shape[-1] // 2 + 1), dtype=np.complex64
+            )
             mask_cont = cache_cp(
                 cont_size, out=False, center=(0, 0), nb_pix=im_ifft_cont.shape
             )
@@ -325,19 +366,59 @@ if CUPY_AVAILABLE:
                     nb_pix=im_ifft_cont.shape,
                 ),
             )
+            im_ifft_cont[0 : im_ifft_cont.shape[0] // 2, :] = im_fft[
+                0 : im_ifft_cont.shape[0] // 2, 0 : im_ifft_cont.shape[1]
+            ]
+            im_ifft_cont[im_ifft_cont.shape[0] // 2 :, :] = im_fft[
+                im_fft.shape[0] - im_ifft_cont.shape[0] // 2 : im_fft.shape[0],
+                0 : im_ifft_cont.shape[1],
+            ]
             im_ifft_cont[cp.logical_not(mask_cont)] = 0
             im_cont = cp.fft.irfft2(im_ifft_cont)
-        im_fft[mask] = 0
-        im_ifft[
-            im_ifft.shape[0] // 2 - radius : im_ifft.shape[0] // 2 + radius,
-            im_ifft.shape[1] // 2 - radius : im_ifft.shape[1] // 2 + radius,
-        ] = im_fft[
-            center[0] - radius : center[0] + radius,
-            center[1] - radius : center[1] + radius,
+        if center is not None:
+            offset = (
+                -center[0] + im_fft.shape[-2] // 2,
+                -center[1] + im_fft.shape[-1] // 2,
+            )
+            im_fft = cp.roll(im_fft, offset, axis=(-2, -1))
+        mask = disk_cp(
+            *im_fft.shape[-2:],
+            center=(im_fft.shape[-2] // 2, im_fft.shape[-1] // 2),
+            radius=radius,
+        )
+        im_fft *= mask
+        # upper left quadran
+        im_ifft[..., :radius, :radius] = im_fft[
+            ...,
+            im_fft.shape[-2] // 2 : im_fft.shape[-2] // 2 + radius,
+            im_fft.shape[-1] // 2 : im_fft.shape[-1] // 2 + radius,
         ]
-        im_ifft = cp.fft.fftshift(im_ifft)
+        # bottom left quadran
+        im_ifft[..., -radius:, :radius] = im_fft[
+            ...,
+            im_fft.shape[-2] // 2 - radius : im_fft.shape[-2] // 2,
+            im_fft.shape[-1] // 2 : im_fft.shape[-1] // 2 + radius,
+        ]
+        # upper right quadran
+        im_ifft[..., :radius, -radius:] = im_fft[
+            ...,
+            im_fft.shape[-2] // 2 : im_fft.shape[-2] // 2 + radius,
+            im_fft.shape[-1] // 2 - radius : im_fft.shape[-1] // 2,
+        ]
+        # bottom right quadran
+        im_ifft[..., -radius:, -radius:] = im_fft[
+            ...,
+            im_fft.shape[-2] // 2 - radius : im_fft.shape[-2] // 2,
+            im_fft.shape[-1] // 2 - radius : im_fft.shape[-1] // 2,
+        ]
+        # set the rest to 0 bc np.empty does not instantiate an actual empty array
+        im_ifft[..., radius:-radius, radius:-radius] = 0
+        im_ifft[..., radius:-radius, :radius] = 0
+        im_ifft[..., radius:-radius, -radius:] = 0
+        im_ifft[..., -radius:, radius:-radius] = 0
+        im_ifft[..., :radius, radius:-radius] = 0
         im_ifft = cp.fft.ifft2(im_ifft)
-        im_ifft *= np.exp(
+        im_ifft *= cp.exp(
             -1j * cp.angle(im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2])
         )
         if cont:
@@ -483,7 +564,7 @@ def exp_angle_fast_scalar(x: np.ndarray, y: complex) -> None:
 @lru_cache(maxsize=10)
 @numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
 def disk(m: int, n: int, center: tuple, radius: int) -> np.ndarray:
-    """Numba compatible mgrid in i,j indexing style
+    """Numba compatible disk in i,j indexing style
 
     Args:
         m (int) : size along i axis
