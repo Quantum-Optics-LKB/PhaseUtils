@@ -98,6 +98,8 @@ if CUPY_AVAILABLE:
             np.ndarray: xx, yy like numpy's meshgrid
         """
         mm, nn = cp.ogrid[:m, :n]
+        mm -= center[0]
+        nn -= center[1]
         r = mm * mm + nn * nn
         out = r < radius * radius
         return out
