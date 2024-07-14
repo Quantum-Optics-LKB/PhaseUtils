@@ -17,3 +17,4 @@ build/lib/PhaseUtils/fast_interp.py
 build/lib/PhaseUtils/SLM.py
 build/lib/PhaseUtils/velocity.py
 tests/fft.wisdom
+build/lib/PhaseUtils/velocity.py

@@ -27,6 +27,7 @@ except ImportError:
 if CUPY_AVAILABLE:
     from numba import cuda
     from cupyx.scipy import special as special_cp
+    from scipy import ndimage as ndimage_cp
 pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
 pyfftw.config.PLANNER_EFFORT = "FFTW_ESTIMATE"
 pyfftw.interfaces.cache.enable()
@@ -41,23 +42,6 @@ except FileNotFoundError:
 
 if CUPY_AVAILABLE:
 
-    @cuda.jit(fastmath=True)
-    def _az_avg_cp(
-        image: cp.ndarray, prof: cp.ndarray, prof_counts: cp.ndarray, center: tuple
-    ) -> None:
-        """Kernel for azimuthal average calculation
-
-        Args:
-            image (cp.ndarray): The image from which to calculate the azimuthal average
-            prof (cp.ndarray): A vector containing the bins
-            prof_counts (cp.ndarray): A vector of same size as prof to count each bin
-        """
-        i, j = numba.cuda.grid(2)
-        if i < image.shape[0] and j < image.shape[1]:
-            dist = round(math.sqrt((i - center[1]) ** 2 + (j - center[0]) ** 2))
-            prof[dist] += image[i, j]
-            prof_counts[dist] += 1
-
     def az_avg_cp(image: cp.ndarray, center: tuple) -> cp.ndarray:
         """Calculates the azimuthally averaged radial profile.
 
@@ -70,24 +54,14 @@ if CUPY_AVAILABLE:
         Returns:
             cp.ndarray: prof the radially averaged profile
         """
-        # Calculate the indices from the image
-        max_r = max(
-            [
-                cp.hypot(center[0], center[1]),
-                cp.hypot(center[0] - image.shape[1], center[1]),
-                cp.hypot(center[0] - image.shape[1], center[1] - image.shape[0]),
-                cp.hypot(center[0], center[1] - image.shape[0]),
-            ]
+        sx, sy = image.shape
+        X, Y = cp.ogrid[0:sx, 0:sy]
+        r = cp.hypot(X - center[1], Y - center[0])
+        rbin = cp.round(r).astype(np.uint64)
+        radial_mean = ndimage_cp.mean(
+            image, labels=rbin, index=cp.arange(0, r.max() + 1)
         )
-        r = cp.arange(1, int(max_r) + 1, 1)
-        prof = cp.zeros_like(r, dtype=np.float32)
-        prof_counts = cp.zeros_like(r, dtype=np.float32)
-        tpb = 16
-        bpgx = math.ceil(image.shape[0] / tpb)
-        bpgy = math.ceil(image.shape[1] / tpb)
-        _az_avg_cp[(bpgx, bpgy), (tpb, tpb)](image, prof, prof_counts, center)
-        prof /= prof_counts
-        return prof
+        return radial_mean
 
     @cuda.jit(fastmath=True)
     def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int) -> None:
@@ -136,30 +110,27 @@ if CUPY_AVAILABLE:
         velo[1, :, :] = cp.gradient(phase_unwrap[1, :, :], dx, axis=0)
         return velo
 
-    def velocity_fft_cp(phase: cp.ndarray, dx: float = 1) -> cp.ndarray:
-        """Returns the velocity from the phase using an fft to compute
-        the gradient
+    def velocity_fft_cp(field: cp.ndarray, dx: float = 1) -> cp.ndarray:
+        """Compute velocity from the field.
 
         Args:
-            phase (cp.ndarray): The field phase
-            dx (float, optional): the pixel size in m. Defaults to 1 (adimensional).
+            field (cp.ndarray): The field to compute the velocity
+            dx (float, optional): pixel size in m. Defaults to 1.
 
         Returns:
-            cp.ndarray: The velocity field [vx, vy]
+            cp.ndarray: the velocity field [vx, vy]
         """
-        # 1D unwrap
-        phase_unwrap = cp.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-        phase_unwrap[0, :, :] = cp.unwrap(phase, axis=-1)
-        phase_unwrap[1, :, :] = cp.unwrap(phase, axis=-2)
+        rho = field.real * field.real + field.imag * field.imag
         # prepare K matrix
-        kx = 2 * np.pi * cp.fft.fftfreq(phase.shape[-1], dx)
-        ky = 2 * np.pi * cp.fft.fftfreq(phase.shape[-2], dx)
+        kx = 2 * np.pi * cp.fft.fftfreq(field.shape[-1], dx)
+        ky = 2 * np.pi * cp.fft.fftfreq(field.shape[-2], dx)
         K = cp.array(cp.meshgrid(kx, ky))
         # gradient reconstruction
-        velo = cp.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-        velo = cp.fft.irfft2(
-            1j * K[:, :, 0 : K.shape[-1] // 2 + 1] * cp.fft.rfft2(phase_unwrap)
-        )
+        velo = cp.fft.ifft2(1j * K * cp.fft.fft2(field))
+        velo[0, :, :] = cp.imag(cp.conj(field) * velo[0, :, :]) / rho
+        velo[1, :, :] = cp.imag(cp.conj(field) * velo[1, :, :]) / rho
+        velo[cp.isnan(velo)] = 0
+        velo = velo.astype(np.float32)
         return velo
 
     def helmholtz_decomp_cp(
@@ -182,9 +153,9 @@ if CUPY_AVAILABLE:
         ky = 2 * np.pi * cp.fft.fftfreq(sy, d=dx)
         K = cp.array(cp.meshgrid(kx, ky))
         if regularize:
-            velo = cp.abs(field) * velocity_cp(cp.angle(field))
+            velo = cp.abs(field) * velocity_fft_cp(field)
         else:
-            velo = velocity_cp(cp.angle(field))
+            velo = velocity_fft_cp(field)
         v_tot = cp.hypot(velo[0], velo[1])
         V_k = cp.fft.rfft2(velo)
         # Helmohltz decomposition fot the compressible part
@@ -268,25 +239,26 @@ if CUPY_AVAILABLE:
         using the Fourier transform of the velocity fields
 
         Args:
-            ucomp (np.ndarray): Compressible velocity field
-            uinc (np.ndarray): Incompressible velocity field
+            ucomp (cp.ndarray): Compressible velocity field
+            uinc (cp.ndarray): Incompressible velocity field
 
         Returns:
-            (Ucc, Uii) np.ndarray: The array containing the compressible / incompressible
+            (Ucc, Uii) cp.ndarray: The array containing the compressible / incompressible
             energies as a function of the wavevector k
         """
 
         # compressible
-        Ux_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[0])))
-        Uy_c = cp.abs(cp.fft.fftshift(cp.fft.fft2(ucomp[1])))
-        Uc = Ux_c**2 + Uy_c**2
+        Uc = cp.fft.fftshift(cp.fft.fft2(ucomp))
+        Uc = Uc.real * Uc.real + Uc.imag * Uc.imag
+        Uc = Uc.sum(axis=0)
         Ucc = az_avg_cp(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
         # incompressible
-        Ux_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[0])))
-        Uy_i = cp.abs(cp.fft.fftshift(cp.fft.fft2(uinc[1])))
-        Ui = Ux_i**2 + Uy_i**2
+        Ui = cp.fft.fftshift(cp.fft.fft2(uinc))
+        Ui = Ui.real * Ui.real + Ui.imag * Ui.imag
+        Ui = Ui.sum(axis=0)
         Uii = az_avg_cp(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
+
         return Ucc, Uii
 
     def vortex_detection_cp(
@@ -539,6 +511,23 @@ if CUPY_AVAILABLE:
         out *= d**2 * k / (2 * np.pi)
         return out
 
+    def kinetic_spectrum_cp(k: np.ndarray, psi: np.ndarray, d: float) -> np.ndarray:
+        """Compute the kinetic energy spectrum of a field using a bessel reduce.
+
+        Args:
+            k (cp.ndarray): Wavenumber array.
+            psi (cp.ndarray): Wavefunction to compute the spectrum.
+            d (float): Pixel size in m.
+
+        Returns:
+            cp.ndarray: the kinetic energy spectrum.
+        """
+        vx, vy = velocity_fft_cp(psi, d)
+        corrx = cross_correlate_cp(vx, vx)
+        corry = cross_correlate_cp(vy, vy)
+        corr = 0.5 * (corrx + corry)
+        return bessel_reduce_cp(k, corr, d)
+
 
 @numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
 def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
@@ -629,7 +618,7 @@ def velocity(phase: np.ndarray, dx: float = 1) -> np.ndarray:
     return velo
 
 
-def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
+def velocity_fft(field: np.ndarray, dx: float = 1) -> np.ndarray:
     """Returns the velocity from the phase using an fft to compute
     the gradient
 
@@ -640,18 +629,19 @@ def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
     Returns:
         np.ndarray: The velocity field [vx, vy]
     """
-    # 1D unwrap
-    phase_unwrap = np.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    phase_unwrap[0, :, :] = np.unwrap(phase, axis=-1)
-    phase_unwrap[1, :, :] = np.unwrap(phase, axis=-2)
+    rho = field.real * field.real + field.imag * field.imag
     # prepare K matrix
-    kx = np.fft.fftfreq(phase.shape[-1], dx)
-    ky = np.fft.fftfreq(phase.shape[-2], dx)
-    Kx, Ky = np.meshgrid(kx, ky)
+    kx = 2 * np.pi * np.fft.fftfreq(field.shape[-1], dx)
+    ky = 2 * np.pi * np.fft.fftfreq(field.shape[-2], dx)
+    K = np.array(np.meshgrid(kx, ky))
     # gradient reconstruction
-    velo = np.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    velo[0, :, :] = np.fft.ifft2(Kx * np.fft.fft2(phase_unwrap[0, :, :]))
-    velo[1, :, :] = np.fft.ifft2(Ky * np.fft.fft2(phase_unwrap[1, :, :]))
+    velo = pyfftw.interfaces.numpy_fft.ifft2(
+        1j * K * pyfftw.interfaces.numpy_fft.fft2(field)
+    )
+    velo[0, :, :] = np.imag(np.conj(field) * velo[0, :, :]) / rho
+    velo[1, :, :] = np.imag(np.conj(field) * velo[1, :, :]) / rho
+    velo[np.isnan(velo)] = 0
+    velo = velo.astype(np.float32)
     return velo
 
 
@@ -759,15 +749,15 @@ def energy_spectrum(ucomp: np.ndarray, uinc: np.ndarray) -> np.ndarray:
     """
 
     # compressible
-    Ux_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[0])))
-    Uy_c = np.abs(np.fft.fftshift(np.fft.fft2(ucomp[1])))
-    Uc = Ux_c**2 + Uy_c**2
+    Uc = np.fft.fftshift(np.fft.fft2(ucomp))
+    Uc = Uc.real * Uc.real + Uc.imag * Uc.imag
+    Uc = Uc.sum(axis=0)
     Ucc = az_avg(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
     # incompressible
-    Ux_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[0])))
-    Uy_i = np.abs(np.fft.fftshift(np.fft.fft2(uinc[1])))
-    Ui = Ux_i**2 + Uy_i**2
+    Ui = np.fft.fftshift(np.fft.fft2(uinc))
+    Ui = Ui.real * Ui.real + Ui.imag * Ui.imag
+    Ui = Ui.sum(axis=0)
     Uii = az_avg(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
 
     return Ucc, Uii
@@ -1176,3 +1166,21 @@ def bessel_reduce(
         out[i] = np.real(np.sum(corr * special.j0(ki * rrp)))
     out *= d**2 * k / (2 * np.pi)
     return out
+
+
+def kinetic_spectrum(k: np.ndarray, psi: np.ndarray, d: float) -> np.ndarray:
+    """Compute the kinetic energy spectrum of a field using a bessel reduce.
+
+    Args:
+        k (np.ndarray): Wavenumber array.
+        psi (np.ndarray): Wavefunction to compute the spectrum.
+        d (float): Pixel size in m.
+
+    Returns:
+        np.ndarray: the kinetic energy spectrum.
+    """
+    vx, vy = velocity_fft(psi, d)
+    corrx = cross_correlate(vx, vx)
+    corry = cross_correlate(vy, vy)
+    corr = 0.5 * (corrx + corry)
+    return bessel_reduce(k, corr, d)

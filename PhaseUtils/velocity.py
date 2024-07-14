@@ -125,7 +125,6 @@ if CUPY_AVAILABLE:
         kx = 2 * np.pi * cp.fft.fftfreq(field.shape[-1], dx)
         ky = 2 * np.pi * cp.fft.fftfreq(field.shape[-2], dx)
         K = cp.array(cp.meshgrid(kx, ky))
-        K = cp.array(cp.meshgrid(kx, ky))
         # gradient reconstruction
         velo = cp.fft.ifft2(1j * K * cp.fft.fft2(field))
         velo[0, :, :] = cp.imag(cp.conj(field) * velo[0, :, :]) / rho
@@ -512,6 +511,23 @@ if CUPY_AVAILABLE:
         out *= d**2 * k / (2 * np.pi)
         return out
 
+    def kinetic_spectrum_cp(k: np.ndarray, psi: np.ndarray, d: float) -> np.ndarray:
+        """Compute the kinetic energy spectrum of a field using a bessel reduce.
+
+        Args:
+            k (cp.ndarray): Wavenumber array.
+            psi (cp.ndarray): Wavefunction to compute the spectrum.
+            d (float): Pixel size in m.
+
+        Returns:
+            cp.ndarray: the kinetic energy spectrum.
+        """
+        vx, vy = velocity_fft_cp(psi, d)
+        corrx = cross_correlate_cp(vx, vx)
+        corry = cross_correlate_cp(vy, vy)
+        corr = 0.5 * (corrx + corry)
+        return bessel_reduce_cp(k, corr, d)
+
 
 @numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
 def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
@@ -602,7 +618,7 @@ def velocity(phase: np.ndarray, dx: float = 1) -> np.ndarray:
     return velo
 
 
-def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
+def velocity_fft(field: np.ndarray, dx: float = 1) -> np.ndarray:
     """Returns the velocity from the phase using an fft to compute
     the gradient
 
@@ -613,18 +629,19 @@ def velocity_fft(phase: np.ndarray, dx: float = 1) -> np.ndarray:
     Returns:
         np.ndarray: The velocity field [vx, vy]
     """
-    # 1D unwrap
-    phase_unwrap = np.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    phase_unwrap[0, :, :] = np.unwrap(phase, axis=-1)
-    phase_unwrap[1, :, :] = np.unwrap(phase, axis=-2)
+    rho = field.real * field.real + field.imag * field.imag
     # prepare K matrix
-    kx = np.fft.fftfreq(phase.shape[-1], dx)
-    ky = np.fft.fftfreq(phase.shape[-2], dx)
-    Kx, Ky = np.meshgrid(kx, ky)
+    kx = 2 * np.pi * np.fft.fftfreq(field.shape[-1], dx)
+    ky = 2 * np.pi * np.fft.fftfreq(field.shape[-2], dx)
+    K = np.array(np.meshgrid(kx, ky))
     # gradient reconstruction
-    velo = np.empty((2, phase.shape[-2], phase.shape[-1]), dtype=np.float32)
-    velo[0, :, :] = np.fft.ifft2(Kx * np.fft.fft2(phase_unwrap[0, :, :]))
-    velo[1, :, :] = np.fft.ifft2(Ky * np.fft.fft2(phase_unwrap[1, :, :]))
+    velo = pyfftw.interfaces.numpy_fft.ifft2(
+        1j * K * pyfftw.interfaces.numpy_fft.fft2(field)
+    )
+    velo[0, :, :] = np.imag(np.conj(field) * velo[0, :, :]) / rho
+    velo[1, :, :] = np.imag(np.conj(field) * velo[1, :, :]) / rho
+    velo[np.isnan(velo)] = 0
+    velo = velo.astype(np.float32)
     return velo
 
 
@@ -1149,3 +1166,21 @@ def bessel_reduce(
         out[i] = np.real(np.sum(corr * special.j0(ki * rrp)))
     out *= d**2 * k / (2 * np.pi)
     return out
+
+
+def kinetic_spectrum(k: np.ndarray, psi: np.ndarray, d: float) -> np.ndarray:
+    """Compute the kinetic energy spectrum of a field using a bessel reduce.
+
+    Args:
+        k (np.ndarray): Wavenumber array.
+        psi (np.ndarray): Wavefunction to compute the spectrum.
+        d (float): Pixel size in m.
+
+    Returns:
+        np.ndarray: the kinetic energy spectrum.
+    """
+    vx, vy = velocity_fft(psi, d)
+    corrx = cross_correlate(vx, vx)
+    corry = cross_correlate(vy, vy)
+    corr = 0.5 * (corrx + corry)
+    return bessel_reduce(k, corr, d)
