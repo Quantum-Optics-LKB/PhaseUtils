@@ -1,3 +1,12 @@
+.DS_Store
+PhaseUtils/__pycache__/SLM.mgrid-156.py310.1.nbc
+PhaseUtils/__pycache__/SLM.mgrid-156.py310.nbi
+PhaseUtils.egg-info/dependency_links.txt
+PhaseUtils.egg-info/PKG-INFO
+PhaseUtils.egg-info/requires.txt
+PhaseUtils.egg-info/SOURCES.txt
+PhaseUtils.egg-info/top_level.txt
+tests/fft.wisdom
 PhaseUtils.egg-info/dependency_links.txt
 PhaseUtils.egg-info/PKG-INFO
 PhaseUtils.egg-info/requires.txt

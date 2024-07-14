@@ -1,0 +1,79 @@
+%apsrev4-2.bst 2019-01-14 (MD) hand-edited version of apsrev4-1.bst
+%Control: key (0)
+%Control: author (8) initials jnrlst
+%Control: editor formatted (1) identically to author
+%Control: production of article title (0) allowed
+%Control: page (0) single
+%Control: year (1) truncated
+%Control: production of eprint (0) enabled
+\begin{thebibliography}{9}%
+\makeatletter
+\providecommand \@ifxundefined [1]{%
+ \@ifx{#1\undefined}
+}%
+\providecommand \@ifnum [1]{%
+ \ifnum #1\expandafter \@firstoftwo
+ \else \expandafter \@secondoftwo
+ \fi
+}%
+\providecommand \@ifx [1]{%
+ \ifx #1\expandafter \@firstoftwo
+ \else \expandafter \@secondoftwo
+ \fi
+}%
+\providecommand \natexlab [1]{#1}%
+\providecommand \enquote  [1]{``#1''}%
+\providecommand \bibnamefont  [1]{#1}%
+\providecommand \bibfnamefont [1]{#1}%
+\providecommand \citenamefont [1]{#1}%
+\providecommand \href@noop [0]{\@secondoftwo}%
+\providecommand \href [0]{\begingroup \@sanitize@url \@href}%
+\providecommand \@href[1]{\@@startlink{#1}\@@href}%
+\providecommand \@@href[1]{\endgroup#1\@@endlink}%
+\providecommand \@sanitize@url [0]{\catcode `\\12\catcode `\$12\catcode `\&12\catcode `\#12\catcode `\^12\catcode `\_12\catcode `\%12\relax}%
+\providecommand \@@startlink[1]{}%
+\providecommand \@@endlink[0]{}%
+\providecommand \url  [0]{\begingroup\@sanitize@url \@url }%
+\providecommand \@url [1]{\endgroup\@href {#1}{\urlprefix }}%
+\providecommand \urlprefix  [0]{URL }%
+\providecommand \Eprint [0]{\href }%
+\providecommand \doibase [0]{https://doi.org/}%
+\providecommand \selectlanguage [0]{\@gobble}%
+\providecommand \bibinfo  [0]{\@secondoftwo}%
+\providecommand \bibfield  [0]{\@secondoftwo}%
+\providecommand \translation [1]{[#1]}%
+\providecommand \BibitemOpen [0]{}%
+\providecommand \bibitemStop [0]{}%
+\providecommand \bibitemNoStop [0]{.\EOS\space}%
+\providecommand \EOS [0]{\spacefactor3000\relax}%
+\providecommand \BibitemShut  [1]{\csname bibitem#1\endcsname}%
+\let\auto@bib@innerbib\@empty
+%</preamble>
+\bibitem [{\citenamefont {Liebling}\ \emph {et~al.}(2004)\citenamefont {Liebling}, \citenamefont {Blu},\ and\ \citenamefont {Unser}}]{lieblingComplexwaveRetrievalSingle2004}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {Liebling}}, \bibinfo {author} {\bibfnamefont {T.}~\bibnamefont {Blu}},\ and\ \bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {Unser}},\ }\bibfield  {title} {\bibinfo {title} {Complex-wave retrieval from a single off-axis hologram},\ }\href {https://doi.org/10.1364/JOSAA.21.000367} {\bibfield  {journal} {\bibinfo  {journal} {Journal of the Optical Society of America A}\ }\textbf {\bibinfo {volume} {21}},\ \bibinfo {pages} {367} (\bibinfo {year} {2004})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Verrier}\ and\ \citenamefont {Atlan}(2011)}]{verrierOffaxisDigitalHologram2011}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {N.}~\bibnamefont {Verrier}}\ and\ \bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {Atlan}},\ }\bibfield  {title} {\bibinfo {title} {Off-axis digital hologram reconstruction: Some practical considerations},\ }\href {https://doi.org/10.1364/AO.50.00H136} {\bibfield  {journal} {\bibinfo  {journal} {Applied Optics}\ }\textbf {\bibinfo {volume} {50}},\ \bibinfo {pages} {H136} (\bibinfo {year} {2011})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Aladjidi}(2023)}]{aladjidiFullOpticalControl2023}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {T.}~\bibnamefont {Aladjidi}},\ }\emph {\bibinfo {title} {Full Optical Control of Quantum Fluids of Light in Hot Atomic Vapors}},\ \href@noop {} {Ph.D. thesis},\ \bibinfo  {school} {Sorbonne Universit{\'e}}, \bibinfo {address} {Laboratoire Kastler Brossel, Paris, France} (\bibinfo {year} {2023})\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Glorieux}\ \emph {et~al.}(2023)\citenamefont {Glorieux}, \citenamefont {Aladjidi}, \citenamefont {Lett},\ and\ \citenamefont {Kaiser}}]{glorieuxHotAtomicVapors2023}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {Q.}~\bibnamefont {Glorieux}}, \bibinfo {author} {\bibfnamefont {T.}~\bibnamefont {Aladjidi}}, \bibinfo {author} {\bibfnamefont {P.~D.}\ \bibnamefont {Lett}},\ and\ \bibinfo {author} {\bibfnamefont {R.}~\bibnamefont {Kaiser}},\ }\bibfield  {title} {\bibinfo {title} {Hot atomic vapors for nonlinear and quantum optics},\ }\href {https://doi.org/10.1088/1367-2630/acce5a} {\bibfield  {journal} {\bibinfo  {journal} {New Journal of Physics}\ }\textbf {\bibinfo {volume} {25}},\ \bibinfo {pages} {051201} (\bibinfo {year} {2023})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {{Baker-Rasooli}}\ \emph {et~al.}(2023)\citenamefont {{Baker-Rasooli}}, \citenamefont {Liu}, \citenamefont {Aladjidi}, \citenamefont {Bramati},\ and\ \citenamefont {Glorieux}}]{bakerrasooliTurbulentDynamicsTwodimensional2023}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {{Baker-Rasooli}}}, \bibinfo {author} {\bibfnamefont {W.}~\bibnamefont {Liu}}, \bibinfo {author} {\bibfnamefont {T.}~\bibnamefont {Aladjidi}}, \bibinfo {author} {\bibfnamefont {A.}~\bibnamefont {Bramati}},\ and\ \bibinfo {author} {\bibfnamefont {Q.}~\bibnamefont {Glorieux}},\ }\bibfield  {title} {\bibinfo {title} {Turbulent dynamics in a two-dimensional paraxial fluid of light},\ }\href {https://doi.org/10.1103/PhysRevA.108.063512} {\bibfield  {journal} {\bibinfo  {journal} {Physical Review A}\ }\textbf {\bibinfo {volume} {108}},\ \bibinfo {pages} {063512} (\bibinfo {year} {2023})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Bradley}\ and\ \citenamefont {Anderson}(2012)}]{bradleyEnergySpectraVortex2012}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {A.~S.}\ \bibnamefont {Bradley}}\ and\ \bibinfo {author} {\bibfnamefont {B.~P.}\ \bibnamefont {Anderson}},\ }\bibfield  {title} {\bibinfo {title} {Energy {{Spectra}} of {{Vortex Distributions}} in {{Two-Dimensional Quantum Turbulence}}},\ }\href {https://doi.org/10.1103/PhysRevX.2.041001} {\bibfield  {journal} {\bibinfo  {journal} {Physical Review X}\ }\textbf {\bibinfo {volume} {2}},\ \bibinfo {pages} {041001} (\bibinfo {year} {2012})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Bradley}\ \emph {et~al.}(2022)\citenamefont {Bradley}, \citenamefont {Kumar}, \citenamefont {Pal},\ and\ \citenamefont {Yu}}]{PhysRevA.106.043322}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {A.~S.}\ \bibnamefont {Bradley}}, \bibinfo {author} {\bibfnamefont {R.~K.}\ \bibnamefont {Kumar}}, \bibinfo {author} {\bibfnamefont {S.}~\bibnamefont {Pal}},\ and\ \bibinfo {author} {\bibfnamefont {X.}~\bibnamefont {Yu}},\ }\bibfield  {title} {\bibinfo {title} {Spectral analysis for compressible quantum fluids},\ }\href {https://doi.org/10.1103/PhysRevA.106.043322} {\bibfield  {journal} {\bibinfo  {journal} {Phys. Rev. A}\ }\textbf {\bibinfo {volume} {106}},\ \bibinfo {pages} {043322} (\bibinfo {year} {2022})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Bolduc}\ \emph {et~al.}(2013)\citenamefont {Bolduc}, \citenamefont {Bent}, \citenamefont {Santamato}, \citenamefont {Karimi},\ and\ \citenamefont {Boyd}}]{bolducExactSolutionSimultaneous2013}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {E.}~\bibnamefont {Bolduc}}, \bibinfo {author} {\bibfnamefont {N.}~\bibnamefont {Bent}}, \bibinfo {author} {\bibfnamefont {E.}~\bibnamefont {Santamato}}, \bibinfo {author} {\bibfnamefont {E.}~\bibnamefont {Karimi}},\ and\ \bibinfo {author} {\bibfnamefont {R.~W.}\ \bibnamefont {Boyd}},\ }\bibfield  {title} {\bibinfo {title} {Exact solution to simultaneous intensity and phase encryption with a single phase-only hologram},\ }\href {https://doi.org/10.1364/OL.38.003546} {\bibfield  {journal} {\bibinfo  {journal} {Optics Letters}\ }\textbf {\bibinfo {volume} {38}},\ \bibinfo {pages} {3546} (\bibinfo {year} {2013})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Popoff}(2017)}]{sebastien_m_popoff_2017_293042}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.~M.}\ \bibnamefont {Popoff}},\ }\href {https://doi.org/10.5281/zenodo.293042} {\bibinfo {title} {Wavefronthsaping/{{slmPy}}: {{First}} release}},\ \bibinfo {howpublished} {Zenodo} (\bibinfo {year} {2017})\BibitemShut {NoStop}%
+\end{thebibliography}%
