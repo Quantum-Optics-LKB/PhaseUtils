@@ -134,17 +134,17 @@ if CUPY_AVAILABLE:
         return velo
 
     def helmholtz_decomp_cp(
-        field: np.ndarray, plot: bool = False, dx: float = 1, regularize: bool = True
-    ) -> tuple:
+        field: cp.ndarray, plot: bool = False, dx: float = 1, regularize: bool = True
+    ) -> tuple[cp.ndarray, cp.ndarray, cp.ndarray]:
         """Decomposes a phase picture into compressible and incompressible velocities
 
         Args:
-            field (np.ndarray): 2D array of the field
+            field (cp.ndarray): 2D array of the field
             plot (bool, optional): Final plots. Defaults to True.
             dx (float, optional): Spatial sampling size in m. Defaults to 1.
             regularize (bool, optional): Whether to multiply speed by the amplitude or not.
         Returns:
-            tuple: (velo, v_incc, v_comp) a tuple containing the velocity field,
+            tuple: (u, u_inc, u_comp) a tuple containing the velocity field,
             the incompressible velocity and compressible velocity.
         """
         sy, sx = field.shape
@@ -153,22 +153,22 @@ if CUPY_AVAILABLE:
         ky = 2 * np.pi * cp.fft.fftfreq(sy, d=dx)
         K = cp.array(cp.meshgrid(kx, ky))
         if regularize:
-            velo = cp.abs(field) * velocity_fft_cp(field)
+            u = cp.abs(field) * velocity_fft_cp(field)
         else:
-            velo = velocity_fft_cp(field)
-        v_tot = cp.hypot(velo[0], velo[1])
-        V_k = cp.fft.rfft2(velo)
+            u = velocity_fft_cp(field)
+        u_tot = cp.hypot(u[0], u[1])
+        u_k = cp.fft.rfft2(u)
         # Helmohltz decomposition fot the compressible part
-        V_comp = -1j * cp.sum(V_k * K, axis=0) / ((cp.sum(K**2, axis=0)) + 1e-15)
-        v_comp = cp.fft.irfft2(1j * V_comp * K)
+        u_comp = -1j * cp.sum(u_k * K, axis=0) / ((cp.sum(K**2, axis=0)) + 1e-15)
+        u_comp = cp.fft.irfft2(1j * u_comp * K)
         # Helmohltz decomposition fot the incompressible part
-        v_inc = velo - v_comp
+        u_inc = u - u_comp
         if plot:
-            flow_inc = cp.hypot(v_inc[0], v_inc[1])
-            flow_comp = cp.hypot(v_comp[0], v_comp[1])
+            flow_inc = cp.hypot(u_inc[0], u_inc[1])
+            flow_comp = cp.hypot(u_comp[0], u_comp[1])
             YY, XX = np.indices(flow_comp.shape)
             fig, ax = plt.subplots(2, 2, figsize=[12, 9])
-            im0 = ax[0, 0].imshow(v_tot.get())
+            im0 = ax[0, 0].imshow(u_tot.get())
             ax[0, 0].set_title(r"$|v^{tot}|$")
             ax[0, 0].set_xlabel("x")
             ax[0, 0].set_ylabel("y")
@@ -184,8 +184,8 @@ if CUPY_AVAILABLE:
             ax[1, 0].streamplot(
                 XX,
                 YY,
-                v_comp[0].get(),
-                v_comp[1].get(),
+                u_comp[0].get(),
+                u_comp[1].get(),
                 density=2.5,
                 color="white",
                 linewidth=1,
@@ -200,8 +200,8 @@ if CUPY_AVAILABLE:
             ax[1, 1].streamplot(
                 XX,
                 YY,
-                v_inc[0].get(),
-                v_inc[1].get(),
+                u_inc[0].get(),
+                u_inc[1].get(),
                 density=2.5,
                 color="white",
                 linewidth=1,
@@ -211,7 +211,7 @@ if CUPY_AVAILABLE:
             ax[1, 1].set_ylabel("y")
             fig.colorbar(im3, ax=ax[1, 1], label=r"$|v^{inc}|$")
             plt.show()
-        return velo, v_inc, v_comp
+        return u, u_inc, u_comp
 
     def energy_cp(ucomp: cp.ndarray, uinc: cp.ndarray) -> tuple:
         """Computes the total energy contained in the given compressible
@@ -528,6 +528,30 @@ if CUPY_AVAILABLE:
         corr = 0.5 * (corrx + corry)
         return bessel_reduce_cp(k, corr, d)
 
+    def comp_incomp_spectrum_cp(
+        k: cp.ndarray, psi: cp.ndarray, d: float
+    ) -> tuple[cp.ndarray, cp.ndarray]:
+        """Compute the compressible and incompressible energy spectrum of a field using a bessel reduce.
+
+        Args:
+            k (cp.ndarray): Wavenumber array.
+            psi (cp.ndarray): Wavefunction to compute the spectrum.
+            d (float): Pixel size in m.
+
+        Returns:
+            cp.ndarray: the compressible and incompressible energy spectrum.
+        """
+        _, u_i, u_c = helmholtz_decomp_cp(psi, plot=False, dx=d)
+        corrx_i = cross_correlate_cp(u_i[0], u_i[0])
+        corry_i = cross_correlate_cp(u_i[1], u_i[1])
+        corr_i = 0.5 * (corrx_i + corry_i)
+        incomp = bessel_reduce_cp(k, corr_i, d)
+        corrx_c = cross_correlate_cp(u_c[0], u_c[0])
+        corry_c = cross_correlate_cp(u_c[1], u_c[1])
+        corr_c = 0.5 * (corrx_c + corry_c)
+        comp = bessel_reduce_cp(k, corr_c, d)
+        return incomp, comp
+
 
 @numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
 def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
@@ -623,7 +647,7 @@ def velocity_fft(field: np.ndarray, dx: float = 1) -> np.ndarray:
     the gradient
 
     Args:
-        phase (np.ndarray): The field phase
+        field (np.ndarray): The field
         dx (float, optional): the pixel size in m. Defaults to 1 (adimensional).
 
     Returns:
@@ -645,15 +669,18 @@ def velocity_fft(field: np.ndarray, dx: float = 1) -> np.ndarray:
     return velo
 
 
-def helmholtz_decomp(field: np.ndarray, plot=False, dx: float = 1) -> tuple:
+def helmholtz_decomp(
+    field: np.ndarray, plot: bool = False, dx: float = 1, regularize: bool = True
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Decomposes a phase picture into compressible and incompressible velocities
 
     Args:
         field (np.ndarray): 2D array of the field
         plot (bool, optional): Final plots. Defaults to True.
         dx (float, optional): Spatial sampling size in m. Defaults to 1.
+        regularize (bool, optional): Whether to multiply speed by the amplitude or not.
     Returns:
-        tuple: (velo, v_incc, v_comp) a tuple containing the velocity field,
+        (u, u_inc, u_comp) (np.ndarray): a tuple containing the velocity field,
         the incompressible velocity and compressible velocity.
     """
     sy, sx = field.shape
@@ -661,56 +688,66 @@ def helmholtz_decomp(field: np.ndarray, plot=False, dx: float = 1) -> tuple:
     kx = 2 * np.pi * np.fft.rfftfreq(sx, d=dx)
     ky = 2 * np.pi * np.fft.fftfreq(sy, d=dx)
     K = np.array(np.meshgrid(kx, ky))
-    phase = np.angle(field)
-    velo = np.abs(field) * velocity(phase, dx)
-
-    v_tot = np.hypot(velo[0], velo[1])
-    V_k = pyfftw.interfaces.numpy_fft.rfft2(velo)
-
-    # Helmholtz decomposition fot the compressible part
-    V_comp = -1j * np.sum(V_k * K, axis=0) / ((np.sum(K**2, axis=0)) + 1e-15)
-    v_comp = pyfftw.interfaces.numpy_fft.irfft2(1j * V_comp * K)
-
-    # Helmholtz decomposition fot the incompressible part
-    v_inc = velo - v_comp
-    # save FFT wisdom
-    with open("fft.wisdom", "wb") as file:
-        wisdom = pyfftw.export_wisdom()
-        pickle.dump(wisdom, file)
+    if regularize:
+        u = np.abs(field) * velocity_fft(field)
+    else:
+        u = velocity_fft(field)
+    u_tot = np.hypot(u[0], u[1])
+    u_k = pyfftw.interfaces.numpy_fft.rfft2(u)
+    # Helmohltz decomposition fot the compressible part
+    u_comp = -1j * np.sum(u_k * K, axis=0) / ((np.sum(K**2, axis=0)) + 1e-15)
+    u_comp = pyfftw.interfaces.numpy_fft.irfft2(1j * u_comp * K)
+    # Helmohltz decomposition fot the incompressible part
+    u_inc = u - u_comp
     if plot:
-        flow = np.hypot(v_inc[0], v_inc[1])
-        YY, XX = np.indices(flow.shape)
+        flow_inc = np.hypot(u_inc[0], u_inc[1])
+        flow_comp = np.hypot(u_comp[0], u_comp[1])
+        YY, XX = np.indices(flow_comp.shape)
         fig, ax = plt.subplots(2, 2, figsize=[12, 9])
-        im0 = ax[0, 0].imshow(v_tot)
+        im0 = ax[0, 0].imshow(u_tot)
         ax[0, 0].set_title(r"$|v^{tot}|$")
         ax[0, 0].set_xlabel("x")
         ax[0, 0].set_ylabel("y")
         fig.colorbar(im0, ax=ax[0, 0])
 
-        im1 = ax[0, 1].imshow(flow)
+        im1 = ax[0, 1].imshow(flow_inc)
         ax[0, 1].set_title(r"$|v^{inc}|$")
         ax[0, 1].set_xlabel("x")
         ax[0, 1].set_ylabel("y")
         fig.colorbar(im1, ax=ax[0, 1])
 
-        im2 = ax[1, 0].imshow(np.hypot(v_comp[0], v_comp[1]))
+        im2 = ax[1, 0].imshow(flow_comp)
+        ax[1, 0].streamplot(
+            XX,
+            YY,
+            u_comp[0],
+            u_comp[1],
+            density=2.5,
+            color="white",
+            linewidth=1,
+        )
         ax[1, 0].set_title(r"$|v^{comp}|$")
         ax[1, 0].set_xlabel("x")
         ax[1, 0].set_ylabel("y")
         fig.colorbar(im2, ax=ax[1, 0])
 
         # flows are calculated by streamplot
-        im3 = ax[1, 1].imshow(flow, cmap="viridis")
+        im3 = ax[1, 1].imshow(flow_inc, cmap="viridis")
         ax[1, 1].streamplot(
-            XX, YY, v_inc[0], v_inc[1], density=5, color="white", linewidth=1
+            XX,
+            YY,
+            u_inc[0],
+            u_inc[1],
+            density=2.5,
+            color="white",
+            linewidth=1,
         )
         ax[1, 1].set_title(r"$v^{inc}$")
         ax[1, 1].set_xlabel("x")
         ax[1, 1].set_ylabel("y")
         fig.colorbar(im3, ax=ax[1, 1], label=r"$|v^{inc}|$")
         plt.show()
-
-    return velo, v_inc, v_comp
+    return u, u_inc, u_comp
 
 
 def energy(ucomp: np.ndarray, uinc: np.ndarray) -> tuple:
@@ -1184,3 +1221,28 @@ def kinetic_spectrum(k: np.ndarray, psi: np.ndarray, d: float) -> np.ndarray:
     corry = cross_correlate(vy, vy)
     corr = 0.5 * (corrx + corry)
     return bessel_reduce(k, corr, d)
+
+
+def comp_incomp_spectrum(
+    k: np.ndarray, psi: np.ndarray, d: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the compressible and incompressible energy spectrum of a field using a bessel reduce.
+
+    Args:
+        k (np.ndarray): Wavenumber array.
+        psi (np.ndarray): Wavefunction to compute the spectrum.
+        d (float): Pixel size in m.
+
+    Returns:
+        np.ndarray: the compressible and incompressible energy spectrum.
+    """
+    _, u_i, u_c = helmholtz_decomp(psi, plot=False, dx=d)
+    corrx_i = cross_correlate(u_i[0], u_i[0])
+    corry_i = cross_correlate(u_i[1], u_i[1])
+    corr_i = 0.5 * (corrx_i + corry_i)
+    incomp = bessel_reduce(k, corr_i, d)
+    corrx_c = cross_correlate(u_c[0], u_c[0])
+    corry_c = cross_correlate(u_c[1], u_c[1])
+    corr_c = 0.5 * (corrx_c + corry_c)
+    comp = bessel_reduce(k, corr_c, d)
+    return incomp, comp
