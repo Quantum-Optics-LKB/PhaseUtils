@@ -8,6 +8,7 @@ Created on Wed Sep 14 20:45:44 2022
 from scipy import spatial, special
 from numba import cuda
 import numba
+import numba_scipy
 import matplotlib.pyplot as plt
 import math
 import numpy as np
@@ -130,7 +131,7 @@ if CUPY_AVAILABLE:
         velo[0, :, :] = cp.imag(cp.conj(field) * velo[0, :, :]) / rho
         velo[1, :, :] = cp.imag(cp.conj(field) * velo[1, :, :]) / rho
         velo[cp.isnan(velo)] = 0
-        velo = velo.astype(np.float32)
+        velo = velo.real
         return velo
 
     def helmholtz_decomp_cp(
@@ -665,7 +666,7 @@ def velocity_fft(field: np.ndarray, dx: float = 1) -> np.ndarray:
     velo[0, :, :] = np.imag(np.conj(field) * velo[0, :, :]) / rho
     velo[1, :, :] = np.imag(np.conj(field) * velo[1, :, :]) / rho
     velo[np.isnan(velo)] = 0
-    velo = velo.astype(np.float32)
+    velo = velo.real
     return velo
 
 
@@ -1179,6 +1180,7 @@ def cross_correlate(psi: np.ndarray, phi: np.ndarray) -> np.ndarray:
     return corr
 
 
+@numba.njit(parallel=True, fastmath=True, boundscheck=False)
 def bessel_reduce(
     k: np.ndarray,
     corr: np.ndarray,
@@ -1196,12 +1198,15 @@ def bessel_reduce(
     """
     xp = np.linspace(-corr.shape[1] / 2, corr.shape[1] / 2, corr.shape[1]) * d
     yp = np.linspace(-corr.shape[0] / 2, corr.shape[0] / 2, corr.shape[0]) * d
-    xxp, yyp = np.meshgrid(xp, yp)
-    rrp = np.hypot(xxp, yyp)
     out = np.zeros_like(k)
-    for i, ki in enumerate(k):
-        out[i] = np.real(np.sum(corr * special.j0(ki * rrp)))
-    out *= d**2 * k / (2 * np.pi)
+    for i in range(k.size):
+        sum_bessel = 0
+        for j in numba.prange(corr.shape[0]):
+            for l in numba.prange(corr.shape[1]):
+                sum_bessel += corr[j, l] * special.j0(
+                    k[i] * math.sqrt(xp[l] ** 2 + yp[j] ** 2)
+                )
+        out[i] = np.real(sum_bessel) * d**2 * k[i] / (2 * np.pi)
     return out
 
 
