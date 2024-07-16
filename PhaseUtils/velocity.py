@@ -28,7 +28,7 @@ except ImportError:
 if CUPY_AVAILABLE:
     from numba import cuda
     from cupyx.scipy import special as special_cp
-    from scipy import ndimage as ndimage_cp
+    from cupyx.scipy import ndimage as ndimage_cp
 pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
 pyfftw.config.PLANNER_EFFORT = "FFTW_ESTIMATE"
 pyfftw.interfaces.cache.enable()
