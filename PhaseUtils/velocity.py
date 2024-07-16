@@ -492,6 +492,22 @@ if CUPY_AVAILABLE:
         corr = cp.fft.fftshift(corr)
         return corr
 
+    def auto_correlate_cp(psi: cp.ndarray) -> cp.ndarray:
+        """Compute the auto-correlation function of a field.
+
+        Args:
+            psi (cp.ndarray): Field to correlate.
+
+        Returns:
+            cp.ndarray: The auto-correlation function
+        """
+        psi = cp.pad(psi, (psi.shape[0] // 2, psi.shape[1] // 2), mode="constant")
+        psi_k = cp.fft.fft2(psi, norm="ortho")
+        corr = psi_k.real * psi_k.real + psi_k.imag * psi_k.imag
+        corr = cp.fft.ifft2(corr, norm="ortho")
+        corr = cp.fft.fftshift(corr)
+        return corr
+
     def bessel_reduce_cp(k: cp.ndarray, corr: cp.ndarray, d: float) -> cp.ndarray:
         """Do a bessel function reduction on the correlation function using the GPU.
 
@@ -524,8 +540,8 @@ if CUPY_AVAILABLE:
             cp.ndarray: the kinetic energy spectrum.
         """
         vx, vy = velocity_fft_cp(psi, d)
-        corrx = cross_correlate_cp(vx, vx)
-        corry = cross_correlate_cp(vy, vy)
+        corrx = auto_correlate_cp(vx)
+        corry = auto_correlate_cp(vy)
         corr = 0.5 * (corrx + corry)
         return bessel_reduce_cp(k, corr, d)
 
@@ -543,12 +559,12 @@ if CUPY_AVAILABLE:
             cp.ndarray: the compressible and incompressible energy spectrum.
         """
         _, u_i, u_c = helmholtz_decomp_cp(psi, plot=False, dx=d)
-        corrx_i = cross_correlate_cp(u_i[0], u_i[0])
-        corry_i = cross_correlate_cp(u_i[1], u_i[1])
+        corrx_i = auto_correlate_cp(u_i[0])
+        corry_i = auto_correlate_cp(u_i[1])
         corr_i = 0.5 * (corrx_i + corry_i)
         incomp = bessel_reduce_cp(k, corr_i, d)
-        corrx_c = cross_correlate_cp(u_c[0], u_c[0])
-        corry_c = cross_correlate_cp(u_c[1], u_c[1])
+        corrx_c = auto_correlate_cp(u_c[0])
+        corry_c = auto_correlate_cp(u_c[1])
         corr_c = 0.5 * (corrx_c + corry_c)
         comp = bessel_reduce_cp(k, corr_c, d)
         return incomp, comp
@@ -1180,6 +1196,23 @@ def cross_correlate(psi: np.ndarray, phi: np.ndarray) -> np.ndarray:
     return corr
 
 
+def auto_correlate(psi: np.ndarray) -> np.ndarray:
+    """Compute the auto-correlation function of a field.
+
+    Args:
+        psi (np.ndarray): Field to correlate.
+
+    Returns:
+        np.ndarray: The auto-correlation function
+    """
+    psi = np.pad(psi, (psi.shape[0] // 2, psi.shape[1] // 2), mode="constant")
+    psi_k = pyfftw.interfaces.numpy_fft.fft2(psi, norm="ortho")
+    corr = psi_k.real * psi_k.real + psi_k.imag * psi_k.imag
+    corr = pyfftw.interfaces.numpy_fft.ifft2(corr, norm="ortho")
+    corr = np.fft.fftshift(corr)
+    return corr
+
+
 @numba.njit(parallel=True, fastmath=True, boundscheck=False)
 def bessel_reduce(
     k: np.ndarray,
@@ -1222,8 +1255,8 @@ def kinetic_spectrum(k: np.ndarray, psi: np.ndarray, d: float) -> np.ndarray:
         np.ndarray: the kinetic energy spectrum.
     """
     vx, vy = velocity_fft(psi, d)
-    corrx = cross_correlate(vx, vx)
-    corry = cross_correlate(vy, vy)
+    corrx = auto_correlate(vx)
+    corry = auto_correlate(vy)
     corr = 0.5 * (corrx + corry)
     return bessel_reduce(k, corr, d)
 
@@ -1242,12 +1275,12 @@ def comp_incomp_spectrum(
         np.ndarray: the compressible and incompressible energy spectrum.
     """
     _, u_i, u_c = helmholtz_decomp(psi, plot=False, dx=d)
-    corrx_i = cross_correlate(u_i[0], u_i[0])
-    corry_i = cross_correlate(u_i[1], u_i[1])
+    corrx_i = auto_correlate(u_i[0])
+    corry_i = auto_correlate(u_i[1])
     corr_i = 0.5 * (corrx_i + corry_i)
     incomp = bessel_reduce(k, corr_i, d)
-    corrx_c = cross_correlate(u_c[0], u_c[0])
-    corry_c = cross_correlate(u_c[1], u_c[1])
+    corrx_c = auto_correlate(u_c[0])
+    corry_c = auto_correlate(u_c[1])
     corr_c = 0.5 * (corrx_c + corry_c)
     comp = bessel_reduce(k, corr_c, d)
     return incomp, comp
