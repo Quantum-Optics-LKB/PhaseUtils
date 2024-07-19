@@ -11,6 +11,7 @@ from PhaseUtils.fast_interp import interp1d
 from scipy.interpolate import make_interp_spline
 import screeninfo
 from functools import lru_cache
+from typing import Any
 
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x) / x
@@ -198,6 +199,31 @@ def grating(m: int, n: int, theta: float = 45, pitch: int = 8) -> np.ndarray:
     return grating
 
 
+@numba.njit(fastmath=True, cache=True, boundscheck=False)
+def floyd_steinberg(image: np.ndarray):
+    """Apply the Floyd-Steinberg dithering algorithm to an image.
+
+    Args:
+        image (np.ndarray): Float image between 0 and 1.
+    """
+    h, w = image.shape
+    for y in range(h):
+        for x in range(w):
+            old = image[y, x]
+            new = np.round(old)
+            image[y, x] = new
+            error = old - new
+            # precomputing the constants helps
+            if x + 1 < w:
+                image[y, x + 1] += error * 0.4375  # right, 7 / 16
+            if (y + 1 < h) and (x + 1 < w):
+                image[y + 1, x + 1] += error * 0.0625  # right, down, 1 / 16
+            if y + 1 < h:
+                image[y + 1, x] += error * 0.3125  # down, 5 / 16
+            if (x - 1 >= 0) and (y + 1 < h):
+                image[y + 1, x - 1] += error * 0.1875  # left, down, 3 / 16
+
+
 def circle(m: int, n: int, R: int, width: int = 20, value: int = 255) -> np.ndarray:
     """Draws a circle
 
@@ -219,6 +245,49 @@ def circle(m: int, n: int, R: int, width: int = 20, value: int = 255) -> np.ndar
     cond = Radii > (R - width / 2)
     cond &= Radii < (R + width / 2)
     out[cond] = value
+    return out
+
+
+def disk(m: int, n: int, R: int, value: int = 255) -> np.ndarray:
+    """Draws a disk
+
+    Args:
+        m (int): Size in i
+        n (int): Size in j
+        R (int): Radius in px
+        value (int, optional): Value inside the circle. Defaults to 255.
+
+    Returns:
+        np.ndarray: _description_
+    """
+    ii, jj = np.mgrid[0:m, 0:n]
+    jj = jj - n / 2
+    ii = ii - m / 2
+    out = np.zeros_like(ii, dtype="uint8")
+    Radii = np.sqrt(ii**2 + jj**2)
+    cond = Radii < R
+    out[cond] = value
+    return out
+
+
+def hyper_gaussian(m: int, n: int, R: int, k: float, value: int = 255) -> np.ndarray:
+    """Draw a hypergaussian.
+
+    Args:
+        m (int): Size in i
+        n (int): Size in j
+        R (int): Radius in px
+        value (int, optional): Value inside the circle. Defaults to 255.
+
+    Returns:
+        np.ndarray: The beam profile.
+    """
+    ii, jj = np.mgrid[0:m, 0:n]
+    jj = jj - n / 2
+    ii = ii - m / 2
+    out = np.zeros_like(ii, dtype="uint8")
+    Radii = np.sqrt(ii**2 + jj**2)
+    out = np.exp(-(Radii**k) / R**k)
     return out
 
 
@@ -292,6 +361,39 @@ def vortex(m: int, n: int, i: int, j: int, ll: int) -> np.ndarray:
     x = np.zeros((m, n), dtype=bool)
     ii, jj = np.mgrid[0 : x.shape[0], 0 : x.shape[1]]
     return np.angle((ii - i + 1j * (jj - j)) ** ll)
+
+
+def jrs(m: int, n: int, y0: int, x0: int, Mach: float, xi: float) -> np.ndarray:
+    """Define a JRS phase pattern
+
+    Args:
+        m (int): Size of the pattern in i
+        n (int): Size of the pattern in j
+        i (int): i position of center
+        j (int): j position of center
+        l (int): size of jrs
+        velo (float): velocity of the jrs
+
+    Returns:
+        np.ndarray: The phase mask to display on the SLM
+    """
+    y, x = np.mgrid[0:m, 0:n]
+    x = x - x0
+    y = y - y0
+    eps = np.sqrt(1 - Mach**2)
+    amp = 1 - 4 * eps**2 * (
+        (3 / 2 + eps**4 * y**2 / xi**2 - eps**2 * x**2 / xi**2)
+        / (3 / 2 + eps**4 * y**2 / xi**2 + eps**2 * x**2 / xi**2) ** 2
+    )
+    amp = np.sqrt(amp)
+    phi = (
+        -2
+        * np.sqrt(2)
+        * eps
+        * (eps * x / xi)
+        / (3 / 2 + eps**4 * y**2 / xi**2 + eps**2 * x**2 / xi**2)
+    )
+    return amp, phi
 
 
 def black_hole_phase_profile(
@@ -422,3 +524,72 @@ def hyberbolic_tangent(
     jump = (jump + 1) / 2
     jump = 1 - contrast + contrast * jump
     return jump
+
+
+def hyberbolic_tangent_2d(
+    m: int,
+    n: int,
+    contrast: float = 1,
+    angle: float = 90,
+    pos: tuple = (0, 0),
+    xi: float = 1,
+) -> np.ndarray:
+    """Generate a 2d hyberbolic tangent profile.
+    This generates a smoothed jump from 1-contrast to contrast
+    using a tanh function.
+
+    Args:
+        m (int): Height of the pattern
+        n (int): Width of the pattern
+        width (float): Width of the transition zone
+        contrast (float, optional): Height difference between the two zones.
+        Defaults to 1.
+        angle (float, optional): Angle of the transition zone.
+        Defaults to 0 (vertical).
+    """
+    angle = np.pi * angle / 180
+    y, x = mgrid(m, n)
+    x = x - n / 2.0 + pos[0]
+    y = y - m / 2.0 + pos[1]
+    jump = np.tanh(
+        np.sqrt(
+            (np.cos(angle) * x + np.sin(angle) * y) ** 2
+            + (np.cos(angle) * x - np.sin(angle) * y) ** 2
+        )
+        / (np.sqrt(2) * xi)
+    )
+    # jump = (jump + 1) / 2
+    jump = np.ones((m, n)) - contrast + contrast * jump
+    return jump
+
+
+def lens(m: int, n: int, f: float, d: float = 8e-6, wvl: float = 780e-9) -> np.ndarray:
+    """Lens phase profile.
+
+    Args:
+        m (int): Rows
+        n (int): Cols
+        f (float): Focal length in m
+        d (float): Pixel pitch of the slm in m
+        wvl (float): Wavelength in m
+
+    Returns:
+        np.ndarray: The lens phase profile
+    """
+    x = np.linspace(-n / 2, n / 2, n) * d
+    y = np.linspace(-m / 2, m / 2, m) * d
+    X, Y = np.meshgrid(x, y)
+    return np.angle(np.exp(1j * 2 * np.pi * (X**2 + Y**2) / (2 * f * wvl)))
+
+
+def smooth_ring(m, n, ell, p, r0, dr) -> tuple[Any, Any]:
+    y, x = mgrid(m, n)
+    x = x - n / 2
+    y = y - m / 2
+    r = np.hypot(x, y)
+    theta = np.arctan2(y, x)
+    t_field = np.exp(1j * (ell * theta + p * r))
+    t_field = t_field * np.exp(-((r - r0) ** 2) / (dr / 2) ** 2)
+    Amp = np.abs(t_field)
+    Phase = np.angle(t_field)
+    return Amp, Phase
