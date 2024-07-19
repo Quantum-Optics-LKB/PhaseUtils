@@ -22,6 +22,100 @@ N_interp = 2000
 f = interpolator(np.linspace(0, 1, N_interp))
 f[-1] = 0
 inv_sinc = interp1d(0, 1, 1 / N_interp, f, e=3, k=1)
+DIFFUSION_MAPS = {}
+DIFFUSION_MAPS["floyd-steinberg"] = np.array(
+    [
+        [1, 0, 7, 16],
+        [-1, 1, 3, 16],
+        [0, 1, 5, 16],
+        [1, 1, 1, 16],
+    ]
+)
+DIFFUSION_MAPS["atkinson"] = np.array(
+    [
+        [1, 0, 1, 8],
+        [2, 0, 1, 8],
+        [-1, 1, 1, 8],
+        [0, 1, 1, 8],
+        [1, 1, 1, 8],
+        [0, 2, 1, 8],
+    ]
+)
+DIFFUSION_MAPS["jarvis-judice-ninke"] = np.array(
+    [
+        [1, 0, 7, 48],
+        [2, 0, 5, 48],
+        [-2, 1, 3, 48],
+        [-1, 1, 5, 48],
+        [0, 1, 7, 48],
+        [1, 1, 5, 48],
+        [2, 1, 3, 48],
+        [-2, 2, 1, 48],
+        [-1, 2, 3, 48],
+        [0, 2, 5, 48],
+        [1, 2, 3, 48],
+        [2, 2, 1, 48],
+    ]
+)
+DIFFUSION_MAPS["stucki"] = np.array(
+    [
+        [1, 0, 8, 42],
+        [2, 0, 4, 42],
+        [-2, 1, 2, 42],
+        [-1, 1, 4, 42],
+        [0, 1, 8, 42],
+        [1, 1, 4, 42],
+        [2, 1, 2, 42],
+        [-2, 2, 1, 42],
+        [-1, 2, 2, 42],
+        [0, 2, 4, 42],
+        [1, 2, 2, 42],
+        [2, 2, 1, 42],
+    ]
+)
+DIFFUSION_MAPS["burkes"] = np.array(
+    [
+        [1, 0, 8, 32],
+        [2, 0, 4, 32],
+        [-2, 1, 2, 32],
+        [-1, 1, 4, 32],
+        [0, 1, 8, 32],
+        [1, 1, 4, 32],
+        [2, 1, 2, 32],
+    ]
+)
+DIFFUSION_MAPS["sierra3"] = np.array(
+    [
+        [1, 0, 5, 32],
+        [2, 0, 3, 32],
+        [-2, 1, 2, 32],
+        [-1, 1, 4, 32],
+        [0, 1, 5, 32],
+        [1, 1, 4, 32],
+        [2, 1, 2, 32],
+        [-1, 2, 2, 32],
+        [0, 2, 3, 32],
+        [1, 2, 2, 32],
+    ]
+)
+DIFFUSION_MAPS["sierra2"] = np.array(
+    [
+        [1, 0, 4, 16],
+        [2, 0, 3, 16],
+        [-2, 1, 1, 16],
+        [-1, 1, 2, 16],
+        [0, 1, 3, 16],
+        [1, 1, 2, 16],
+        [2, 1, 1, 16],
+    ]
+)
+DIFFUSION_MAPS["sierra-2-4a"] = np.array(
+    [
+        [1, 0, 2, 4],
+        [-1, 1, 1, 4],
+        [0, 1, 1, 4],
+    ]
+)
 
 
 class SLMscreen:
@@ -197,6 +291,94 @@ def grating(m: int, n: int, theta: float = 45, pitch: int = 8) -> np.ndarray:
             grating[i, j] %= pitch
             grating[i, j] /= pitch
     return grating
+
+
+@numba.njit(fastmath=True, cache=True, boundscheck=False)
+def error_diffusion_dithering(ni, diff_map=DIFFUSION_MAPS["floyd-steinberg"]):
+    """Perform image dithering by error diffusion method.
+
+    Reference:
+        http://bisqwit.iki.fi/jutut/kuvat/ordered_dither/error_diffusion.txt
+
+    Call the diffusion maps as SLM.DIFFUSION_MAPS["map_name"].
+
+    Quantization error of *current* pixel is added to the pixels
+    on the right and below according to the formulas below.
+    This works nicely for most static pictures, but causes
+    an avalanche of jittering artifacts if used in animation.
+
+    Floyd-Steinberg:
+
+              *  7
+           3  5  1      / 16
+
+    Jarvis-Judice-Ninke:
+
+              *  7  5
+        3  5  7  5  3
+        1  3  5  3  1   / 48
+
+    Stucki:
+
+              *  8  4
+        2  4  8  4  2
+        1  2  4  2  1   / 42
+
+    Burkes:
+
+              *  8  4
+        2  4  8  4  2   / 32
+
+
+    Sierra3:
+
+              *  5  3
+        2  4  5  4  2
+           2  3  2      / 32
+
+    Sierra2:
+
+              *  4  3
+        1  2  3  2  1   / 16
+
+    Sierra-2-4A:
+
+              *  2
+           1  1         / 4
+
+    Stevenson-Arce:
+
+                      *   .  32
+        12   .   26   .  30   .  16
+        .   12    .  26   .  12   .
+        5    .   12   .  12   .   5    / 200
+
+    Atkinson:
+
+              *   1   1    / 8
+          1   1   1
+              1
+
+    Args:
+        image (np.ndarray): The image to apply error
+          diffusion dithering to.
+        diff_map (np.ndarray): The error diffusion map to use.
+    Returns:
+        ni (np.ndarray): The error diffusion dithered array.
+    """
+    for y in range(ni.shape[0]):
+        for x in range(ni.shape[1]):
+            old_pixel = ni[y, x]
+            new_pixel = np.round(old_pixel)
+            quantization_error = old_pixel - new_pixel
+            ni[y, x] = new_pixel
+            for dx, dy, diffusion_coeff0, diffusion_coeff1 in diff_map:
+                xn, yn = x + dx, y + dy
+                if (0 <= xn < ni.shape[1]) and (0 <= yn < ni.shape[0]):
+                    ni[yn, xn] += (
+                        quantization_error * diffusion_coeff0 / diffusion_coeff1
+                    )
+    return ni
 
 
 @numba.njit(fastmath=True, cache=True, boundscheck=False)
