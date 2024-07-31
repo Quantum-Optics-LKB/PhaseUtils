@@ -542,7 +542,9 @@ def vortex(m: int, n: int, i: int, j: int, ll: int) -> np.ndarray:
     """
     x = np.zeros((m, n), dtype=bool)
     ii, jj = np.mgrid[0 : x.shape[0], 0 : x.shape[1]]
-    return np.angle((ii - i + 1j * (jj - j)) ** ll)
+    out = np.angle((ii - i + 1j * (jj - j)) ** ll)
+    out[np.isnan(out)] = 0
+    return
 
 
 def jrs(m: int, n: int, y0: int, x0: int, Mach: float, xi: float) -> np.ndarray:
