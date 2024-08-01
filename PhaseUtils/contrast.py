@@ -1,20 +1,21 @@
 # -*-coding:utf-8 -*
 
-import numpy as np
-from functools import lru_cache
+import cmath
+import math
+import multiprocessing
 import pickle
-import pyfftw
+from functools import lru_cache
+from typing import Any
+
 import matplotlib.pyplot as plt
+import numba
+import numpy as np
+import pyfftw
+from numbalsoda import lsoda, lsoda_sig
+from scipy import optimize
 from scipy.ndimage import gaussian_filter
 from skimage import filters, measure, morphology, restoration
 from skimage.segmentation import clear_border, flood
-from scipy import optimize
-from numbalsoda import lsoda_sig, lsoda
-import numba
-import cmath
-import math
-from typing import Any
-import multiprocessing
 
 # cupy available logic
 try:
@@ -24,8 +25,8 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 if CUPY_AVAILABLE:
-    from numba import cuda
     from cupyx.scipy import ndimage as ndimage_cp
+    from numba import cuda
 
 pyfftw.interfaces.cache.enable()
 pyfftw.config.NUM_THREADS = multiprocessing.cpu_count()
@@ -46,7 +47,8 @@ if CUPY_AVAILABLE:
             image (cp.ndarray): The 2D image
             center (tuple): The [x,y] pixel coordinates used as the center.
             Defaults to None,
-            which then uses the center of the image (including fractional pixels).
+            which then uses the center of the image (including fractional
+              pixels).
 
         Returns:
             cp.ndarray: prof the radially averaged profile
@@ -70,9 +72,12 @@ if CUPY_AVAILABLE:
 
         Args:
             radius (int): Radius of the mask
-            center (tuple, optional): Center of the mask. Defaults to (1024, 1024).
-            out (bool, optional): Masks the outside of the disk. Defaults to True.
-            nb_pix (tuple, optional): Shape of the mask. Defaults to (2048, 2048).
+            center (tuple, optional): Center of the mask.
+              Defaults to (1024, 1024).
+            out (bool, optional): Masks the outside of the disk.
+              Defaults to True.
+            nb_pix (tuple, optional): Shape of the mask.
+              Defaults to (2048, 2048).
 
         Returns:
             cp.ndarray: The array of booleans defining the mask
@@ -130,26 +135,30 @@ if CUPY_AVAILABLE:
         alpha: float = 50,
         plot: bool = False,
         err: bool = False,
-    ):
-        """Computes the total dephasing of an interferogram and fits the linear
-        loss coefficient alpha, the nonlinear coefficient n2 and the saturation intensity
-        from a single interferogram.
+    ) -> tuple[float, float, float]:
+        """Compute total dephasing.
 
-        :param np.ndarray im0: Image to extract Dn
-        :param float I0: Initial intensity
-        :param float Pf: Final power
-        :param float d: Pixel pitch of the image
-        :param float k: wavenumber
-        :param bool plot: Plots a visualization of the analysis result
-        :param bool err: Returns the error
-        :return tuple: phi_tot, (n2, Isat, alpha) with the errors if err is True.
+        Computes the total dephasing of an interferogram and fits the linear
+        loss coefficient alpha, the nonlinear coefficient n2 and the saturation
+        intensity from a single interferogram.
+        Args:
+            im0 (cp.ndarray): Image to extract Dn
+            I0 (float): Initial intensity
+            Pf (float): Final power
+            d (float): Pixel pitch of the image
+            k (float): wavenumber
+            plot (bool): Plots a visualization of the analysis result
+            err (bool): Returns the error
+        Returns:
+            phi_tot, n2, Isat, alpha (tuple): with the errors if err is True.
         """
         im = cp.copy(im0)
         im = im / cp.max(im)
         im_fringe = im_osc_fast_cp(im, cont=False)
         im_cont = cp.abs(im_fringe)
         im_cont /= cp.max(im_cont)
-        # ratio of camera sensor surface over whole beam if waist is bigger than the whole camera
+        # ratio of camera sensor surface over whole beam if waist is bigger
+        # than the whole camera
         If = (
             Pf
             / (cp.sum(im_cont) * d**2)
@@ -221,11 +230,15 @@ if CUPY_AVAILABLE:
             ax[2].plot(cont_avg * 1e-4, phi_avg, label="Unwrapped phase")
             lab = f"n2 = {n2:.2e} +/- {n2_err:.2e}\n"
             lab += f"alpha = {alpha:.2f} +/- {alpha_err:.2f}\n"
-            lab += f"Isat = {Isat*1e-4:.2f} +/- {Isat_err*1e-4:.2f} W/cm²\n"
+            lab += f"Isat = {Isat * 1e-4:.2f} +/- {Isat_err * 1e-4:.2f} W/cm²\n"
             ax[2].plot(
-                I_z(L, I_in, alpha, Isat) * 1e-4, fit_phi_vs_I(I_in, n2), label=lab
+                I_z(L, I_in, alpha, Isat) * 1e-4,
+                fit_phi_vs_I(I_in, n2),
+                label=lab,
             )
-            ax[2].plot(cont_avg * 1e-4, phi_avg, label="Unwrapped phase filtered")
+            ax[2].plot(
+                cont_avg * 1e-4, phi_avg, label="Unwrapped phase filtered"
+            )
             ax[2].set_title("Azimuthal average")
             ax[2].set_xlabel(r"Az avg output intensity $W/cm^2$")
             ax[2].set_ylabel("Phase in rad")
@@ -253,14 +266,15 @@ if CUPY_AVAILABLE:
 
         Args:
             im (cp.ndarray): Interferogram
-            center (tuple, optional): Center of the field. Defaults to (Ny//4, Nx//4).
+            center (tuple, optional): Center of the field.
+              Defaults to (Ny//4, Nx//4).
             radius (int, optional): Radius of filter in px. Defaults to 512.
             cont (bool, optionnal): Returns the continuous part of the field.
             Defaults to False.
-            plans (FFTW plan list, optionnal): [plan_fft, plan_ifft] for optional
-            plan caching in streaming applications (like for a viewer).
-            Must provide a list of plans for
-            both the rfft and ifft.
+            plans (FFTW plan list, optionnal): [plan_fft, plan_ifft] for
+              optional plan caching in streaming applications
+              (like for a viewer). Must provide a list of plans for
+              both the rfft and ifft.
 
         Returns:
             np.ndarray: Recovered field
@@ -316,7 +330,8 @@ if CUPY_AVAILABLE:
         im_ifft = cp.fft.fftshift(im_fft, axes=(-2, -1))
         im_ifft = cp.fft.ifft2(im_ifft)
         im_ifft *= cp.exp(
-            -1j * cp.angle(im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2])
+            -1j
+            * cp.angle(im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2])
         )
         if cont:
             return im_ifft, im_cont
@@ -339,7 +354,8 @@ if CUPY_AVAILABLE:
             return_cont (bool, optionnal): Returns the continuous part of the
             field.
             Defaults to False.
-            center (tuple, optionnal): The position of the peak in Fourier domain.
+            center (tuple, optionnal): The position of the peak in Fourier
+              domain.
             Defaults to None.
 
         Returns:
@@ -413,7 +429,8 @@ if CUPY_AVAILABLE:
             im_fft.shape[-2] // 2 - radius : im_fft.shape[-2] // 2,
             im_fft.shape[-1] // 2 - radius : im_fft.shape[-1] // 2,
         ]
-        # set the rest to 0 bc np.empty does not instantiate an actual empty array
+        # set the rest to 0 bc np.empty does not instantiate an actual empty
+        # array
         im_ifft[..., radius:-radius, radius:-radius] = 0
         im_ifft[..., radius:-radius, :radius] = 0
         im_ifft[..., radius:-radius, -radius:] = 0
@@ -421,7 +438,8 @@ if CUPY_AVAILABLE:
         im_ifft[..., :radius, radius:-radius] = 0
         im_ifft = cp.fft.ifft2(im_ifft)
         im_ifft *= cp.exp(
-            -1j * cp.angle(im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2])
+            -1j
+            * cp.angle(im_ifft[im_ifft.shape[0] // 2, im_ifft.shape[1] // 2])
         )
         if cont:
             return im_cont, im_ifft
@@ -435,7 +453,8 @@ if CUPY_AVAILABLE:
         Args:
             im (cp.ndarray): Interferogram
             radius (int, optional): Radius of filter in px. Defaults to 512.
-            return_cont (bool, optionnal): Returns the continuous part of the field. Defaults to False.
+            return_cont (bool, optionnal): Returns the continuous part of the
+              field. Defaults to False.
 
         Returns:
             cp.ndarray: Recovered phase
@@ -485,11 +504,12 @@ def gauss_fit(x, waist, mean) -> Any:
 
 @numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
 def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
-    """Calculates the azimuthally averaged radial profile.
+    """Calculate the azimuthally averaged radial profile.
 
     Args:
         image (np.ndarray): The 2D image
-        center (tuple, optional): The [x,y] pixel coordinates used as the center. Defaults to None,
+        center (tuple, optional): The [x,y] pixel coordinates used as the
+          center. Defaults to None,
         which then uses the center of the image (including fractional pixels).
 
     Returns:
@@ -533,7 +553,9 @@ def angle_fast(x: np.ndarray) -> np.ndarray:
     return out
 
 
-@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
+@numba.njit(
+    fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False
+)
 def exp_angle_fast(x: np.ndarray, y: np.ndarray) -> None:
     """Fast multiplication by exp(-1j*x)
 
@@ -548,7 +570,9 @@ def exp_angle_fast(x: np.ndarray, y: np.ndarray) -> None:
             x[i, j] *= cmath.exp(-1j * cmath.phase(y[i, j]))
 
 
-@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
+@numba.njit(
+    fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False
+)
 def exp_angle_fast_scalar(x: np.ndarray, y: complex) -> None:
     """Fast multiplication by exp(-1j*y)
 
@@ -564,7 +588,9 @@ def exp_angle_fast_scalar(x: np.ndarray, y: complex) -> None:
 
 
 @lru_cache(maxsize=10)
-@numba.njit(fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False)
+@numba.njit(
+    fastmath=True, nogil=True, cache=True, parallel=True, boundscheck=False
+)
 def disk(m: int, n: int, center: tuple, radius: int) -> np.ndarray:
     """Numba compatible disk in i,j indexing style
 
@@ -577,7 +603,9 @@ def disk(m: int, n: int, center: tuple, radius: int) -> np.ndarray:
     out = np.zeros((m, n), dtype=np.uint8)
     for i in numba.prange(m):
         for j in numba.prange(n):
-            r = (i - center[0]) * (i - center[0]) + (j - center[1]) * (j - center[1])
+            r = (i - center[0]) * (i - center[0]) + (j - center[1]) * (
+                j - center[1]
+            )
             out[i, j] = r < radius * radius
     return out
 
@@ -600,11 +628,11 @@ def centre(im, truncate: bool = True) -> tuple:
     ordo = np.linspace(0, im.shape[0] - 1, im.shape[0])
     p0x = np.argmax(out_x)
     p0y = np.argmax(out_y)
-    ptot, pcov = optimize.curve_fit(
+    ptot, _ = optimize.curve_fit(
         gauss_fit, absc, out_x, p0=[p0x, len(absc) // 2], maxfev=3200
     )
     centre_x = ptot[1]
-    ptot, pcov = optimize.curve_fit(
+    ptot, _ = optimize.curve_fit(
         gauss_fit, ordo, out_y, p0=[p0y, len(ordo) // 2], maxfev=3200
     )
     centre_y = ptot[1]
@@ -641,7 +669,7 @@ def waist(im, plot=False) -> tuple[int, int]:
     waist_y = popty[0]
     perry = np.sqrt(np.diag(pcov))[0]
     if plot:
-        fig, ax = plt.subplots(1, 2)
+        _, ax = plt.subplots(1, 2)
         ax[0].plot(absc, out_x)
         tex = r"$w_x$"
         pm = r"$\pm$"
@@ -706,11 +734,15 @@ def im_osc(
     im = im.astype(np.float32)
     im_fft = pyfftw.interfaces.numpy_fft.rfft2(im)
     im_fft_orig = im_fft.copy()
-    im_fft_fringe = pyfftw.zeros_aligned((im.shape[0], im.shape[1]), dtype=np.complex64)
+    im_fft_fringe = pyfftw.zeros_aligned(
+        (im.shape[0], im.shape[1]), dtype=np.complex64
+    )
     im_fft_cont = im_fft.copy()
     fft_filt = gaussian_filter(np.abs(im_fft), 1e-3 * im_fft.shape[0])
     cont_size = im.shape[0] // 4
-    mask_cont = cache(cont_size, out=False, center=(0, 0), nb_pix=im_fft_cont.shape)
+    mask_cont = cache(
+        cont_size, out=False, center=(0, 0), nb_pix=im_fft_cont.shape
+    )
     mask_cont = np.logical_xor(
         mask_cont,
         cache(
@@ -723,13 +755,14 @@ def im_osc(
     im_fft_cont[np.logical_not(mask_cont)] = 0
     im_cont = pyfftw.interfaces.numpy_fft.irfft2(im_fft_cont)
     dbl_gradient = np.log(
-        np.abs(np.gradient(fft_filt, axis=0)) + np.abs(np.gradient(fft_filt, axis=1))
+        np.abs(np.gradient(fft_filt, axis=0))
+        + np.abs(np.gradient(fft_filt, axis=1))
     )
     m_value = np.nanmean(dbl_gradient[dbl_gradient != -np.infty])
     dbl_gradient[mask_cont] = m_value
-    dbl_gradient_int = (2**16 * (dbl_gradient / np.nanmax(dbl_gradient))).astype(
-        np.uint16
-    )
+    dbl_gradient_int = (
+        2**16 * (dbl_gradient / np.nanmax(dbl_gradient))
+    ).astype(np.uint16)
     threshold = filters.threshold_otsu(dbl_gradient_int)
     mask = dbl_gradient_int > threshold
     mask = morphology.remove_small_objects(mask, 1)
@@ -759,23 +792,34 @@ def im_osc(
             ]
         )
         mask_osc_flood = cache(
-            r_osc, out=False, center=(center_osc[1], center_osc[0]), nb_pix=im_fft.shape
+            r_osc,
+            out=False,
+            center=(center_osc[1], center_osc[0]),
+            nb_pix=im_fft.shape,
         )
     im_fft[mask_osc_flood] = 0
 
     # bring osc part to center to remove tilt
     im_fft = np.roll(
         im_fft,
-        (im_fft.shape[0] // 2 - center_osc[0], im_fft.shape[1] // 2 - center_osc[1]),
+        (
+            im_fft.shape[0] // 2 - center_osc[0],
+            im_fft.shape[1] // 2 - center_osc[1],
+        ),
         axis=(-2, -1),
     )
     im_fft_fringe[
-        :, im_fft.shape[1] // 2 : im_fft_fringe.shape[1] // 2 + im_fft.shape[1] // 2 + 1
+        :,
+        im_fft.shape[1] // 2 : im_fft_fringe.shape[1] // 2
+        + im_fft.shape[1] // 2
+        + 1,
     ] = im_fft
     im_fringe = pyfftw.interfaces.numpy_fft.ifft2(
         np.fft.fftshift(im_fft_fringe), s=im.shape, axes=(-1, -2)
     )
-    exp_angle_fast_scalar(im_fringe, im_fringe[im.shape[0] // 2, im.shape[1] // 2])
+    exp_angle_fast_scalar(
+        im_fringe, im_fringe[im.shape[0] // 2, im.shape[1] // 2]
+    )
     # save FFT wisdom
     with open("fft.wisdom", "wb") as file:
         wisdom = pyfftw.export_wisdom()
@@ -870,7 +914,7 @@ def I_z(z: float, I0: np.ndarray, alpha: float, Isat: float) -> np.ndarray:
     t_eval = np.array([0, z], dtype=np.float64)
     p = np.array([alpha, Isat], dtype=np.float64)
     for i in numba.prange(I0.shape[0]):
-        usol, success = lsoda(
+        usol, _ = lsoda(
             dI_dz_ptr,
             np.array([I0[i]], dtype=np.float64),
             t_eval,
@@ -903,7 +947,7 @@ def phi_z(
     t_eval = np.array([0, z], dtype=np.float64)
     p = np.array([k, alpha, n2, Isat], dtype=np.float64)
     for i in numba.prange(I0.shape[0]):
-        usol, success = lsoda(
+        usol, _ = lsoda(
             dphi_dz_ptr,
             np.array([I0[i], 0], dtype=np.float64),
             t_eval,
@@ -927,20 +971,21 @@ def delta_n(
     plot: bool = False,
     err: bool = False,
 ):
-    """Computes the total dephasing of an interferogram and fits the linear
-    loss coefficient alpha, the nonlinear coefficient n2 and the saturation intensity
-    from a single interferogram.
+    """Compute total dephasing, n2, Isat.
 
-    :param np.ndarray im0: Image to extract Dn
-    :param float I0: Initial intensity
-    :param float Pf: Final power
-    :param w0: initial waist
-    :param float d: Pixel pitch of the image
-    :param float k: wavenumber
-    :param float L: length of the cell in m
-    :param bool plot: Plots a visualization of the analysis result
-    :param bool err: Returns the error
-    :return tuple: phi_tot, (n2, Isat, alpha) with the errors if err is True.
+    Computes the total dephasing of an interferogram and fits the linear
+    loss coefficient alpha, the nonlinear coefficient n2 and the saturation
+    intensity from a single interferogram.
+    Args:
+        im0 (np.ndarray): Image to extract Dn
+        I0 (float): Initial intensity
+        Pf (float): Final power
+        d (float): Pixel pitch of the image
+        k (float): wavenumber
+        plot (bool): Plots a visualization of the analysis result
+        err (bool): Returns the error
+    Returns:
+        phi_tot, n2, Isat, alpha (tuple): with the errors if err is True.
     """
     # im = im/np.max(im)
     im_fringe = im_osc_fast_t(im0, cont=False)
@@ -951,7 +996,8 @@ def delta_n(
     wx, wy = waist(im_cont, plot=False)
     wx *= 2 * d
     wy *= 2 * d
-    # ratio of camera sensor surface over whole beam if waist is bigger than the whole camera
+    # ratio of camera sensor surface over whole beam if waist is bigger than the
+    # whole camera
     If = (
         Pf
         / (np.sum(im_cont) * (2 * d) ** 2)
@@ -1029,7 +1075,7 @@ def delta_n(
         ax = fig.add_subplot(2, 3, 5)
         lab = f"n2 = {n2:.2e} +/- {n2_err:.2e}\n"
         lab += f"alpha = {alpha:.2f} +/- {alpha_err:.2f}\n"
-        lab += f"Isat = {Isat*1e-4:.2f} +/- {Isat_err*1e-4:.2f} W/cm²\n"
+        lab += f"Isat = {Isat * 1e-4:.2f} +/- {Isat_err * 1e-4:.2f} W/cm²\n"
         ax.plot(x * 1e3, fit_phi_vs_I(I_in, n2), label=lab)
         ax.plot(x * 1e3, phi_fit, label=r"$\phi_{fit}$")
         ax.set_title("Azimuthal average")
@@ -1039,8 +1085,10 @@ def delta_n(
         ax = fig.add_subplot(2, 3, 6)
         ax.plot(I_in * 1e-4, cont_fit * 1e-4, label=r"$I_{out}$")
         lab = f"alpha = {alpha:.2f} +/- {alpha_err:.2f}\n"
-        lab += f"Isat = {Isat*1e-4:.2f} +/- {Isat_err*1e-4:.2f} W/cm²\n"
-        ax.plot(I_in * 1e-4, fit_function_Isat(I_in, alpha, Isat) * 1e-4, label=lab)
+        lab += f"Isat = {Isat * 1e-4:.2f} +/- {Isat_err * 1e-4:.2f} W/cm²\n"
+        ax.plot(
+            I_in * 1e-4, fit_function_Isat(I_in, alpha, Isat) * 1e-4, label=lab
+        )
         ax.set_title(r"$I_{sat}$ and $\alpha$ fit")
         ax.set_xlabel("Fitted input intensity in $W/cm^2$")
         ax.set_ylabel("Output intensity in $W/cm^2$")
@@ -1222,7 +1270,8 @@ def im_osc_fast_t(
 
     Args:
         im (cp.ndarray): Interferogram
-        center (tuple, optional): Center of the field. Defaults to (Ny//4, Nx//4).
+        center (tuple, optional): Center of the field.
+          Defaults to (Ny//4, Nx//4).
         radius (int, optional): Radius of filter in px. Defaults to 512.
         cont (bool, optionnal): Returns the continuous part of the field.
         Defaults to False.
@@ -1301,13 +1350,17 @@ def im_osc_fast_t(
     return im_ifft
 
 
-def phase_fast(im: np.ndarray, radius: int = 0, cont: bool = False) -> np.ndarray:
+def phase_fast(
+    im: np.ndarray, radius: int = 0, cont: bool = False
+) -> np.ndarray:
     """Fast phase recovery assuming ideal reference angle
 
     Args:
         im (np.ndarray): Interferogram
-        radius (int, optional): Radius of filter in px. Defaults to a quarter the size of the image.
-        return_cont (bool, optionnal): Returns the continuous part of the field. Defaults to false.
+        radius (int, optional): Radius of filter in px.
+          Defaults to a quarter the size of the image.
+        return_cont (bool, optionnal): Returns the continuous part of the field.
+          Defaults to false.
 
     Returns:
         np.ndarray: Recovered phase

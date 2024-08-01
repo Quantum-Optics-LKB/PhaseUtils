@@ -3,15 +3,17 @@
 Created by Tangui Aladjidi at 19/03/2021
 """
 
-import cv2
-import numpy as np
-import numba
 import math
-from PhaseUtils.fast_interp import interp1d
-from scipy.interpolate import make_interp_spline
-import screeninfo
 from functools import lru_cache
 from typing import Any
+
+import cv2
+import numba
+import numpy as np
+import screeninfo
+from scipy.interpolate import make_interp_spline
+
+from PhaseUtils.fast_interp import interp1d
 
 x = np.linspace(-np.pi, 1e-15, 100)
 y = np.sin(x) / x
@@ -140,7 +142,9 @@ class SLMscreen:
             self.name = name
             cv2.namedWindow(name, cv2.WINDOW_NORMAL)
             cv2.moveWindow(name, self.shift, 0)
-            cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            cv2.setWindowProperty(
+                name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN
+            )
             self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
 
     def update(self, A: np.ndarray, delay: int = 1):
@@ -150,7 +154,9 @@ class SLMscreen:
             A (np.ndarray): Array
             delay (int, optional): Delay in ms. Defaults to 1.
         """
-        assert A.dtype == np.uint8, "Only 8 bits patterns are supported by the SLM !"
+        assert (
+            A.dtype == np.uint8
+        ), "Only 8 bits patterns are supported by the SLM !"
         cv2.imshow(self.name, A)
         cv2.waitKey(1 + delay)
 
@@ -159,7 +165,9 @@ class SLMscreen:
 
 
 @numba.njit(fastmath=True, cache=True, parallel=True, boundscheck=False)
-def _phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray) -> None:
+def _phase_amplitude(
+    amp: np.ndarray, phase: np.ndarray, grat: np.ndarray
+) -> None:
     for i in numba.prange(amp.shape[0]):
         for j in numba.prange(amp.shape[1]):
             grat[i, j] *= 2 * np.pi
@@ -176,7 +184,7 @@ def _phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray) -> No
 def phase_amplitude(
     amp: np.ndarray,
     phase: np.ndarray,
-    grat: np.ndarray|None = None,
+    grat: np.ndarray | None = None,
     theta: int = 45,
     pitch: int = 8,
     cal_value: int = 256,
@@ -191,13 +199,16 @@ def phase_amplitude(
         phase (np.ndarray): Phase mask
         theta (int, optional): Angle of the grating in degrees. Defaults to 45.
         pitch (int, optional): Pixel pitch of the grating in px
-        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing on the SLM.
+        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing
+          on the SLM.
 
     Returns:
         np.ndarray: The phase mask to display on the SLM
     """
     # check that shapes match
-    assert amp.shape == phase.shape, "Shape mismatch between phase and intensity !"
+    assert (
+        amp.shape == phase.shape
+    ), "Shape mismatch between phase and intensity !"
     m, n = amp.shape
     # normalize input to less than 1 for the inv_sinc function
     amp /= np.nanmax(amp) + 1e-3
@@ -226,7 +237,8 @@ def phase_only(
         phase (np.ndarray): Phase mask
         theta (int, optional): Angle of the grating in degrees. Defaults to 45.
         pitch (int, optional): Pixel pitch of the grating in px
-        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing on the SLM.
+        cal_value (int, optional): Pixel value corresponding to a 2pi dephasing
+          on the SLM.
 
     Returns:
         np.ndarray: The phase mask to display on the SLM
@@ -272,13 +284,14 @@ def mgrid(m: int, n: int):
 
 @lru_cache(maxsize=10)
 @numba.njit(fastmath=True, cache=True, parallel=True, boundscheck=False)
-def grating(m: int, n: int, theta: float = 45, pitch: int = 8) -> np.ndarray:
+def grating(m: int, n: int, theta: float = 90, pitch: int = 8) -> np.ndarray:
     """Generates a grating of size (m, n)
 
     Args:
         m (int): Size along i axis
         n (int): Size along j axis
-        theta (float, optional): Angle of the grating in degrees. Defaults to 45.
+        theta (float, optional): Angle of the grating in degrees.
+          Defaults to 90.
         pitch (int, optional): Pixel pitch. Defaults to 8.
 
     Returns:
@@ -382,7 +395,10 @@ def error_diffusion_dithering(ni, diff_map=DIFFUSION_MAPS["floyd-steinberg"]):
                     )
     return ni
 
-def circle(m: int, n: int, R: int|float, width: int|float = 20, value: int = 255) -> np.ndarray:
+
+def circle(
+    m: int, n: int, R: int | float, width: int | float = 20, value: int = 255
+) -> np.ndarray:
     """Draws a circle
 
     Args:
@@ -428,7 +444,9 @@ def disk(m: int, n: int, R: int, value: int = 255) -> np.ndarray:
     return out
 
 
-def hyper_gaussian(m: int, n: int, R: int, k: float, value: int = 255) -> np.ndarray:
+def hyper_gaussian(
+    m: int, n: int, R: int, k: float, value: int = 255
+) -> np.ndarray:
     """Draw a hypergaussian.
 
     Args:
@@ -449,7 +467,9 @@ def hyper_gaussian(m: int, n: int, R: int, k: float, value: int = 255) -> np.nda
     return out
 
 
-def cross(m: int, n: int, x0: int = 0, y0: int = 0, width: int = 2) -> np.ndarray:
+def cross(
+    m: int, n: int, x0: int = 0, y0: int = 0, width: int = 2
+) -> np.ndarray:
     """Defines a cross pattern for alignment
 
     Args:
@@ -503,7 +523,9 @@ def checkerboard(m: int, n: int, gridsize: int = 20) -> np.ndarray:
     return x
 
 
-def vortex(m: int, n: int, i: int|float, j: int|float, ll: int) -> np.ndarray:
+def vortex(
+    m: int, n: int, i: int | float, j: int | float, ll: int
+) -> np.ndarray:
     """Defines a vortex phase pattern
 
     Args:
@@ -523,7 +545,9 @@ def vortex(m: int, n: int, i: int|float, j: int|float, ll: int) -> np.ndarray:
     return out
 
 
-def jrs(m: int, n: int, y0: int|float, x0: int|float, Mach: float, xi: float) -> tuple[np.ndarray, np.ndarray]:
+def jrs(
+    m: int, n: int, y0: int | float, x0: int | float, Mach: float, xi: float
+) -> tuple[np.ndarray, np.ndarray]:
     """Define a JRS phase pattern
 
     Args:
@@ -613,7 +637,9 @@ def bragg_density_profile(
     inten = np.ones((m, n))
     for i in numba.prange(m):
         for j in numba.prange(n):
-            inten[i, j] -= alpha * (1 + np.cos(2 * np.pi * kp * j * SLM_pitch)) / 2
+            inten[i, j] -= (
+                alpha * (1 + np.cos(2 * np.pi * kp * j * SLM_pitch)) / 2
+            )
     inten[0 : m // 2 - width // 2, :] = 0
     inten[m // 2 + width // 2 :, :] = 0
     return inten
@@ -637,7 +663,8 @@ def codify_two_values(
         f1 (float): first value to encode on the beam
         f2 (float): second value to encode on the beam
         size (int): Half width of the codification square zone. Default is 16
-        max_value (float): Max phase value availabe for the codification. Default is 2pi
+        max_value (float): Max phase value availabe for the codification.
+          Default is 2pi
         x_shift (int): Shift to apply along the x coordinate to the phase mask.
                        Default is 0
         y_shift (int): Shift to apply along the y coordinate to the phase mask.
@@ -723,7 +750,9 @@ def hyberbolic_tangent_2d(
     return jump
 
 
-def lens(m: int, n: int, f: float, d: float = 8e-6, wvl: float = 780e-9) -> np.ndarray:
+def lens(
+    m: int, n: int, f: float, d: float = 8e-6, wvl: float = 780e-9
+) -> np.ndarray:
     """Lens phase profile.
 
     Args:
