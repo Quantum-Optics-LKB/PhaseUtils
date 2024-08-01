@@ -126,20 +126,22 @@ class SLMscreen:
             position (int): Position of the SLM screen
             name (str, optional): Name of the SLM window. Defaults to "SLM".
         """
-        self.name = name
-        cv2.namedWindow(name, cv2.WINDOW_NORMAL)
-        shift = None
+        self.shift = None
         for m in screeninfo.get_monitors():
-            print(m)
+            if m.name is None:
+                continue
             if str(position) in m.name:
-                shift = m.x
+                self.shift = m.x
                 self.resX = m.width
                 self.resY = m.height
-        if shift is None:
-            print("ERROR : Could not find SLM !")
-        cv2.moveWindow(name, shift, 0)
-        cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
+        if self.shift is None:
+            raise ConnectionError("Could not find SLM !")
+        else:
+            self.name = name
+            cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+            cv2.moveWindow(name, self.shift, 0)
+            cv2.setWindowProperty(name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            self.update(np.ones((self.resY, self.resX), dtype=np.uint8))
 
     def update(self, A: np.ndarray, delay: int = 1):
         """Updates the pattern on the SLM
@@ -174,7 +176,7 @@ def _phase_amplitude(amp: np.ndarray, phase: np.ndarray, grat: np.ndarray) -> No
 def phase_amplitude(
     amp: np.ndarray,
     phase: np.ndarray,
-    grat: np.ndarray = None,
+    grat: np.ndarray|None = None,
     theta: int = 45,
     pitch: int = 8,
     cal_value: int = 256,
@@ -380,33 +382,7 @@ def error_diffusion_dithering(ni, diff_map=DIFFUSION_MAPS["floyd-steinberg"]):
                     )
     return ni
 
-
-@numba.njit(fastmath=True, cache=True, boundscheck=False)
-def floyd_steinberg(image: np.ndarray):
-    """Apply the Floyd-Steinberg dithering algorithm to an image.
-
-    Args:
-        image (np.ndarray): Float image between 0 and 1.
-    """
-    h, w = image.shape
-    for y in range(h):
-        for x in range(w):
-            old = image[y, x]
-            new = np.round(old)
-            image[y, x] = new
-            error = old - new
-            # precomputing the constants helps
-            if x + 1 < w:
-                image[y, x + 1] += error * 0.4375  # right, 7 / 16
-            if (y + 1 < h) and (x + 1 < w):
-                image[y + 1, x + 1] += error * 0.0625  # right, down, 1 / 16
-            if y + 1 < h:
-                image[y + 1, x] += error * 0.3125  # down, 5 / 16
-            if (x - 1 >= 0) and (y + 1 < h):
-                image[y + 1, x - 1] += error * 0.1875  # left, down, 3 / 16
-
-
-def circle(m: int, n: int, R: int, width: int = 20, value: int = 255) -> np.ndarray:
+def circle(m: int, n: int, R: int|float, width: int|float = 20, value: int = 255) -> np.ndarray:
     """Draws a circle
 
     Args:
@@ -527,7 +503,7 @@ def checkerboard(m: int, n: int, gridsize: int = 20) -> np.ndarray:
     return x
 
 
-def vortex(m: int, n: int, i: int, j: int, ll: int) -> np.ndarray:
+def vortex(m: int, n: int, i: int|float, j: int|float, ll: int) -> np.ndarray:
     """Defines a vortex phase pattern
 
     Args:
@@ -547,7 +523,7 @@ def vortex(m: int, n: int, i: int, j: int, ll: int) -> np.ndarray:
     return out
 
 
-def jrs(m: int, n: int, y0: int, x0: int, Mach: float, xi: float) -> np.ndarray:
+def jrs(m: int, n: int, y0: int|float, x0: int|float, Mach: float, xi: float) -> tuple[np.ndarray, np.ndarray]:
     """Define a JRS phase pattern
 
     Args:
