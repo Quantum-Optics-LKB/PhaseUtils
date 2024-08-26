@@ -65,6 +65,28 @@ if CUPY_AVAILABLE:
         )
         return radial_mean
 
+    def az_sum_cp(image: cp.ndarray, center: tuple) -> cp.ndarray:
+        """Calculates the azimuthally summed radial profile.
+
+        Args:
+            image (cp.ndarray): The 2D image
+            center (tuple): The [x,y] pixel coordinates used as the center.
+            Defaults to None,
+            which then uses the center of the image (including fractional
+              pixels).
+
+        Returns:
+            cp.ndarray: prof the radially averaged profile
+        """
+        sx, sy = image.shape
+        X, Y = cp.ogrid[0:sx, 0:sy]
+        r = cp.hypot(X - center[1], Y - center[0])
+        rbin = cp.round(r).astype(np.uint64)
+        radial_sum = ndimage_cp.sum_labels(
+            image, labels=rbin, index=cp.arange(0, r.max() + 1)
+        )
+        return radial_sum
+
     @cuda.jit(fastmath=True)
     def phase_sum_cp(velo: cp.ndarray, cont: cp.ndarray, r: int) -> None:
         """Compute plaquette integral.
@@ -270,13 +292,13 @@ if CUPY_AVAILABLE:
         Uc = cp.fft.fftshift(cp.fft.fft2(ucomp))
         Uc = Uc.real * Uc.real + Uc.imag * Uc.imag
         Uc = Uc.sum(axis=0)
-        Ucc = az_avg_cp(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
+        Ucc = az_sum_cp(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
         # incompressible
         Ui = cp.fft.fftshift(cp.fft.fft2(uinc))
         Ui = Ui.real * Ui.real + Ui.imag * Ui.imag
         Ui = Ui.sum(axis=0)
-        Uii = az_avg_cp(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
+        Uii = az_sum_cp(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
 
         return Ucc, Uii
 
@@ -659,6 +681,37 @@ def az_avg(image: np.ndarray, center: tuple) -> np.ndarray:
     return prof
 
 
+@numba.njit(parallel=True, cache=True, fastmath=True, boundscheck=False)
+def az_sum(image: np.ndarray, center: tuple) -> np.ndarray:
+    """Calculate the azimuthally summed radial profile.
+
+    Args:
+        image (np.ndarray): The 2D image
+        center (tuple): The [x,y] pixel coordinates used as the center.
+          Defaults to None,
+        which then uses the center of the image (including fractional pixels).
+
+    Returns:
+        np.ndarray: prof the radially averaged profile
+    """
+    # Calculate the indices from the image
+    max_r = max(
+        [
+            np.hypot(center[0], center[1]),
+            np.hypot(center[0] - image.shape[1], center[1]),
+            np.hypot(center[0] - image.shape[1], center[1] - image.shape[0]),
+            np.hypot(center[0], center[1] - image.shape[0]),
+        ]
+    )
+    r = np.arange(1, int(max_r) + 1, 1)
+    prof = np.zeros_like(r, dtype=np.float64)
+    for i in numba.prange(image.shape[0]):
+        for j in range(image.shape[1]):
+            dist = round(np.hypot(i - center[1], j - center[0]))
+            prof[dist] += image[i, j]
+    return prof
+
+
 @numba.njit(
     numba.float32[:, :](numba.float32[:, :, :], numba.int64),
     fastmath=True,
@@ -870,13 +923,13 @@ def energy_spectrum(ucomp: np.ndarray, uinc: np.ndarray) -> np.ndarray:
     Uc = np.fft.fftshift(np.fft.fft2(ucomp))
     Uc = Uc.real * Uc.real + Uc.imag * Uc.imag
     Uc = Uc.sum(axis=0)
-    Ucc = az_avg(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
+    Ucc = az_sum(Uc, center=(Uc.shape[1] // 2, Uc.shape[0] // 2))
 
     # incompressible
     Ui = np.fft.fftshift(np.fft.fft2(uinc))
     Ui = Ui.real * Ui.real + Ui.imag * Ui.imag
     Ui = Ui.sum(axis=0)
-    Uii = az_avg(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
+    Uii = az_sum(Ui, center=(Ui.shape[1] // 2, Ui.shape[0] // 2))
 
     return Ucc, Uii
 
